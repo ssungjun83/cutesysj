@@ -23,14 +23,22 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 
 내가 해야 할 것(최소)
 1. 이 폴더를 GitHub 저장소로 올리기
-2. 호스팅(Render/Fly/Railway/VPS 등)에서 “Docker로 배포” 선택
+2. 호스팅에서 “Docker로 배포” 선택 (Render 추천)
 3. 호스팅의 환경변수에 `CHAT_APP_PASSWORD_HASH` 설정 (비밀번호 평문이 아니라 해시)
-4. (중요) DB가 사라지지 않게 “영구 디스크/볼륨”을 붙이고 `CHAT_APP_DATA_DIR`를 그 경로로 설정
+4. (중요) DB가 사라지지 않게 “영구 디스크/볼륨”을 붙이고 `CHAT_APP_DATA_DIR`를 그 경로로 설정 (Render는 `render.yaml`로 자동 설정됨)
 
 배포에 포함된 파일
 - `Dockerfile`: 서버용 실행 설정(호스팅 대부분에서 바로 사용 가능)
 - `wsgi.py`: gunicorn 실행 엔트리
 - `.env.example`: 서버 환경변수 예시
+- `render.yaml`: Render에서 원클릭에 가깝게 배포(디스크 포함)
+
+### Render로 배포(추천)
+
+1. Render 가입/로그인
+2. Blueprint(또는 “New +”)로 이 GitHub 저장소 선택
+3. `CHAT_APP_PASSWORD_HASH`만 입력 (생성: 로컬에서 `.\.venv\Scripts\python tools\hash_password.py`)
+4. 배포 완료 후, Render에서 제공하는 URL로 접속 → 비밀번호 입력 → `가져오기`로 `.txt` 업로드
 
 ## 대화 추가 방법
 
@@ -47,4 +55,3 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 1. `.env`에서 `CHAT_APP_HOST=0.0.0.0` 로 변경
 2. 공유기/방화벽에서 `8000` 포트 열기(포트포워딩)
 3. `http://내공인IP:8000` 로 접속 (비밀번호는 그대로 적용)
-

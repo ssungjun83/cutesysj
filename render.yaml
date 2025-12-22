@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: cutesoyeon-chat
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /login
+    envVars:
+      - key: CHAT_APP_PASSWORD_HASH
+        sync: false
+      - key: CHAT_APP_DATA_DIR
+        value: /data
+    disk:
+      name: chat-data
+      mountPath: /data
+      sizeGB: 1
+

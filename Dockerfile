@@ -12,6 +12,6 @@ COPY . .
 
 EXPOSE 8000
 
-# Use CHAT_APP_PORT if provided by host, otherwise 8000
-CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${CHAT_APP_PORT:-8000} wsgi:app"]
+# Most hosts (Render/Fly/etc) set PORT automatically.
+CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT:-8000} wsgi:app"]
 
