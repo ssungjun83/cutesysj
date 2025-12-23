@@ -206,6 +206,31 @@ def fetch_senders(db_path: Path, limit: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def search_messages(db_path: Path, query: str, limit: int = 2000) -> list[dict]:
+    init_db(db_path)
+    q = (query or "").strip()
+    if not q:
+        return []
+    like = f"%{_escape_like(q)}%"
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, dt, sender, text, source, imported_at
+            FROM messages
+            WHERE text LIKE ? ESCAPE '\\' OR norm_text LIKE ? ESCAPE '\\'
+            ORDER BY dt ASC, id ASC
+            LIMIT ?
+            """,
+            (like, like, int(limit)),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_latest_dt(db_path: Path) -> str | None:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:

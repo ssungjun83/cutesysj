@@ -5,6 +5,7 @@ from pathlib import Path
 import secrets
 from datetime import datetime
 from dataclasses import dataclass
+from markupsafe import Markup, escape
 
 from dotenv import load_dotenv
 from flask import (
@@ -25,6 +26,7 @@ from storage import (
     fetch_senders,
     import_messages_canonicalized,
     normalize_db_senders_and_dedup,
+    search_messages,
 )
 
 
@@ -61,6 +63,27 @@ def _require_login() -> None:
         return
     if not session.get("logged_in"):
         abort(401)
+
+
+def _escape_with_br(text: str) -> Markup:
+    return Markup(escape(text)).replace("\n", Markup("<br>"))
+
+
+def _highlight_html(text: str, term: str | None) -> Markup:
+    if not term:
+        return _escape_with_br(text)
+    term = term.strip()
+    if not term:
+        return _escape_with_br(text)
+    parts = text.split(term)
+    if len(parts) == 1:
+        return _escape_with_br(text)
+    out: list[Markup] = []
+    for i, part in enumerate(parts):
+        out.append(_escape_with_br(part))
+        if i < len(parts) - 1:
+            out.append(Markup("<mark class=\"hl\">") + _escape_with_br(term) + Markup("</mark>"))
+    return Markup("").join(out)
 
 
 def create_app() -> Flask:
@@ -132,6 +155,7 @@ def create_app() -> Flask:
         view = request.args.get("view", "chat").strip().lower()
         if view not in ("chat", "txt"):
             view = "chat"
+        q = (request.args.get("q") or "").strip()
 
         @dataclass
         class DayGroup:
@@ -140,7 +164,10 @@ def create_app() -> Flask:
             messages: list[dict]
 
         me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
-        raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
+        if q:
+            raw_messages = search_messages(DB_PATH, q, limit=5000)
+        else:
+            raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
         days: list[DayGroup] = []
         current: DayGroup | None = None
         for m in raw_messages:
@@ -155,6 +182,7 @@ def create_app() -> Flask:
             m["date_key"] = date_key
             m["date_ko"] = date_ko
             m["time_ko"] = time_ko
+            m["text_html"] = _highlight_html(m["text"], q if q else None)
 
             if current is None or current.date_key != date_key:
                 current = DayGroup(date_key=date_key, date_ko=date_ko, messages=[])
@@ -162,15 +190,6 @@ def create_app() -> Flask:
             current.messages.append(m)
 
         template = "chat_txt.html" if view == "txt" else "chat.html"
-        raw_text = None
-        if view == "txt":
-            parts: list[str] = []
-            for d in days:
-                parts.append(f"--------------- {d.date_ko} ---------------")
-                for m in d.messages:
-                    parts.append(f"[{m['sender']}] [{m['time_ko']}] {m['text']}")
-            raw_text = "\n".join(parts)
-
         senders = fetch_senders(DB_PATH, limit=80)
         return render_template(
             template,
@@ -178,7 +197,8 @@ def create_app() -> Flask:
             me_name=me_name,
             senders=senders,
             view=view,
-            raw_text=raw_text,
+            search_query=q,
+            search_count=len(raw_messages),
         )
 
     @app.post("/me")

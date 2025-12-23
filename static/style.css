@@ -106,9 +106,19 @@ body {
 .topbar-title { font-weight: 700; }
 .topbar-actions { display: flex; gap: 14px; }
 .topbar-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.search-form { display: flex; align-items: center; gap: 8px; }
 .me-form { display: flex; align-items: center; gap: 8px; }
 .jump { display: flex; align-items: center; gap: 8px; }
 .me-label { font-size: 12px; color: var(--muted); }
+.search {
+  width: 180px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: rgba(255,255,255,0.65);
+  color: var(--text);
+}
+.search:focus { outline: none; border-color: rgba(33, 92, 255, 0.55); }
 .select {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -163,6 +173,21 @@ body {
 .bubble-me { background: var(--bubble-me); }
 
 .chat-flash { max-width: 900px; width: 100%; margin: 10px auto 0; padding: 0 12px; }
+
+.search-banner {
+  max-width: 900px;
+  width: 100%;
+  margin: 10px auto 0;
+  padding: 0 12px;
+  color: rgba(11, 18, 32, 0.75);
+  font-size: 12px;
+}
+
+.hl {
+  background: rgba(255, 229, 0, 0.55);
+  border-radius: 6px;
+  padding: 0 2px;
+}
 
 .txt-log {
   background: rgba(255, 255, 255, 0.75);

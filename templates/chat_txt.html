@@ -10,11 +10,19 @@
     <header class="topbar">
       <div class="topbar-title">대화 (텍스트)</div>
       <nav class="topbar-actions">
-        <a class="link" href="{{ url_for('index', view='chat') }}">대화형</a>
+        <a class="link" href="{{ url_for('index', view='chat', q=search_query) }}">대화형</a>
         <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
         <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
       </nav>
       <div class="topbar-tools">
+        <form class="search-form" method="get" action="{{ url_for('index') }}">
+          <input type="hidden" name="view" value="txt" />
+          <input class="search" type="search" name="q" placeholder="검색어" value="{{ search_query or '' }}" />
+          <button class="btn btn-secondary" type="submit">검색</button>
+          {% if search_query %}
+            <a class="link" href="{{ url_for('index', view='txt') }}">전체</a>
+          {% endif %}
+        </form>
         <div class="jump">
           <label class="me-label">날짜 이동</label>
           <select class="select" id="jump-day">
@@ -37,12 +45,16 @@
       {% endif %}
     {% endwith %}
 
+    {% if search_query %}
+      <div class="search-banner">“{{ search_query }}” 검색 결과: {{ search_count or 0 }}건</div>
+    {% endif %}
+
     <main class="chat" id="chat-scroll">
       <div class="txt-log">
         {% for d in days or [] %}
           <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
           {% for m in d.messages %}
-            <div class="txt-row">[{{ m.sender }}] [{{ m.time_ko }}] {{ m.text }}</div>
+            <div class="txt-row">[{{ m.sender }}] [{{ m.time_ko }}] {{ m.text_html }}</div>
           {% endfor %}
         {% endfor %}
       </div>

@@ -10,11 +10,19 @@
     <header class="topbar">
       <div class="topbar-title">대화</div>
       <nav class="topbar-actions">
-        <a class="link" href="{{ url_for('index', view='txt') }}">텍스트 형식</a>
+        <a class="link" href="{{ url_for('index', view='txt', q=search_query) }}">텍스트 형식</a>
         <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
         <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
       </nav>
       <div class="topbar-tools">
+        <form class="search-form" method="get" action="{{ url_for('index') }}">
+          <input type="hidden" name="view" value="chat" />
+          <input class="search" type="search" name="q" placeholder="검색어" value="{{ search_query or '' }}" />
+          <button class="btn btn-secondary" type="submit">검색</button>
+          {% if search_query %}
+            <a class="link" href="{{ url_for('index', view='chat') }}">전체</a>
+          {% endif %}
+        </form>
         <form class="me-form" method="post" action="{{ url_for('set_me') }}">
           <label class="me-label">오른쪽(나)</label>
           <select class="select" name="me_name" onchange="this.form.submit()">
@@ -46,6 +54,10 @@
       {% endif %}
     {% endwith %}
 
+    {% if search_query %}
+      <div class="search-banner">“{{ search_query }}” 검색 결과: {{ search_count or 0 }}건</div>
+    {% endif %}
+
     <main class="chat" id="chat-scroll">
       {% for d in days or [] %}
         <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
@@ -54,11 +66,11 @@
           <div class="msg-row {{ 'me' if is_me else 'other' }}">
             {% if is_me %}
               <div class="time">{{ m.time_ko }}</div>
-              <div class="bubble bubble-me">{{ m.text | e | replace('\n','<br>') | safe }}</div>
+              <div class="bubble bubble-me">{{ m.text_html }}</div>
             {% else %}
               <div class="msg-col">
                 <div class="sender">{{ m.sender }}</div>
-                <div class="bubble bubble-other">{{ m.text | e | replace('\n','<br>') | safe }}</div>
+                <div class="bubble bubble-other">{{ m.text_html }}</div>
               </div>
               <div class="time">{{ m.time_ko }}</div>
             {% endif %}
@@ -78,7 +90,8 @@
           });
         }
         var chat = document.getElementById("chat-scroll");
-        if (chat && !location.hash) {
+        var searching = {{ 'true' if search_query else 'false' }};
+        if (chat && !location.hash && !searching) {
           chat.scrollTop = chat.scrollHeight;
         }
       })();
