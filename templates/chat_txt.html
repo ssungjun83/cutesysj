@@ -10,10 +10,15 @@
     <header class="topbar">
       <div class="topbar-title">대화 (텍스트)</div>
       <nav class="topbar-actions">
-        <a class="link" href="{{ url_for('index', view='chat', q=search_query) }}">대화형</a>
-        <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
-        <a class="link" href="{{ url_for('diary') }}">일기</a>
-        <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        <div class="nav-tabs">
+          <a class="tab is-active" href="{{ url_for('index', view='chat', q=search_query) }}">대화</a>
+          <a class="tab" href="{{ url_for('diary') }}">일기</a>
+        </div>
+        <div class="nav-links">
+          <a class="link" href="{{ url_for('index', view='chat', q=search_query) }}">대화형</a>
+          <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+          <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        </div>
       </nav>
       <div class="topbar-tools">
         <form class="search-form" method="get" action="{{ url_for('index') }}">
