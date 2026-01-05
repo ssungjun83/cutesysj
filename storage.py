@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+import csv
 import hashlib
+import io
 import sqlite3
 from pathlib import Path
 
@@ -269,18 +271,129 @@ def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> in
         return int(cur.lastrowid)
 
 
-def fetch_diary_entries(db_path: Path, limit: int = 200) -> list[dict]:
+def fetch_diary_entries(
+    db_path: Path,
+    *,
+    limit: int | None = 200,
+    q: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    order: str = "desc",
+) -> list[dict]:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        params: list[object] = []
+        conditions: list[str] = []
+        if q:
+            like = f"%{_escape_like(q)}%"
+            conditions.append("(title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\')")
+            params.extend([like, like])
+        if start_date:
+            conditions.append("entry_date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("entry_date <= ?")
+            params.append(end_date)
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        order_sql = "ASC" if order.lower() == "asc" else "DESC"
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
         rows = conn.execute(
+            f"""
+            SELECT id, entry_date, title, body, created_at
+            FROM diary_entries
+            {where_sql}
+            ORDER BY entry_date {order_sql}, id {order_sql}
+            {limit_sql}
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_diary_entry(db_path: Path, entry_id: int) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
             """
             SELECT id, entry_date, title, body, created_at
             FROM diary_entries
-            ORDER BY entry_date DESC, id DESC
-            LIMIT ?
+            WHERE id = ?
             """,
-            (int(limit),),
-        ).fetchall()
-    return [dict(r) for r in rows]
+            (int(entry_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_diary_entry(db_path: Path, entry_id: int, entry_date: str, title: str, body: str) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE diary_entries
+            SET entry_date = ?, title = ?, body = ?
+            WHERE id = ?
+            """,
+            (entry_date, title, body, int(entry_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def delete_diary_entry(db_path: Path, entry_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM diary_entries WHERE id = ?", (int(entry_id),))
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def serialize_diary_plain(entries: list[dict]) -> str:
+    lines: list[str] = []
+    for entry in entries:
+        entry_date = str(entry.get("entry_date") or "")
+        title = str(entry.get("title") or "무제")
+        body = str(entry.get("body") or "")
+        lines.append(f"{entry_date} | {title}")
+        if body:
+            lines.append(body)
+        lines.append("")
+    if not lines:
+        return ""
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def serialize_diary_markdown(entries: list[dict]) -> str:
+    lines: list[str] = []
+    for entry in entries:
+        entry_date = str(entry.get("entry_date") or "")
+        title = str(entry.get("title") or "무제")
+        body = str(entry.get("body") or "")
+        lines.append(f"## {entry_date} - {title}")
+        if body:
+            lines.append(body)
+        lines.append("")
+    if not lines:
+        return ""
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def serialize_diary_csv(entries: list[dict]) -> str:
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["entry_date", "title", "body", "created_at"])
+    for entry in entries:
+        writer.writerow(
+            [
+                entry.get("entry_date"),
+                entry.get("title"),
+                entry.get("body"),
+                entry.get("created_at"),
+            ]
+        )
+    return buf.getvalue()
 

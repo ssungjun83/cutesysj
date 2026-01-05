@@ -12,7 +12,13 @@ import re
 import urllib.error
 import urllib.request
 
-from storage import fetch_messages
+from storage import (
+    fetch_diary_entries,
+    fetch_messages,
+    serialize_diary_csv,
+    serialize_diary_markdown,
+    serialize_diary_plain,
+)
 
 
 _WEEKDAYS_KO = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
@@ -175,21 +181,34 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
 
     try:
         messages = fetch_messages(db_path, limit=None, before_dt=None, order="asc")
+        diary_entries = fetch_diary_entries(db_path, limit=None, order="asc")
         exported = {
             "plain": _export_plain(messages),
             "kakao": _export_kakao(messages),
             "csv": _export_csv(messages),
         }
+        diary_exported = {
+            "plain": serialize_diary_plain(diary_entries),
+            "csv": serialize_diary_csv(diary_entries),
+            "md": serialize_diary_markdown(diary_entries),
+        }
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-        message = f"chat backup {ts} ({len(messages)} messages)"
+        message = f"backup {ts} (chat {len(messages)}, diary {len(diary_entries)})"
         prefix = cfg.prefix
         paths = {
             "plain": f"{prefix}.txt",
             "kakao": f"{prefix}_kakao.txt",
             "csv": f"{prefix}.csv",
+            "diary_plain": f"{prefix}_diary.txt",
+            "diary_csv": f"{prefix}_diary.csv",
+            "diary_md": f"{prefix}_diary.md",
         }
         for key, path in paths.items():
-            _github_put_file(cfg, path, exported[key], message)
+            if key.startswith("diary_"):
+                diary_key = key.replace("diary_", "", 1)
+                _github_put_file(cfg, path, diary_exported[diary_key], message)
+            else:
+                _github_put_file(cfg, path, exported[key], message)
         return True
     except Exception as exc:
         if logger:

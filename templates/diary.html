@@ -6,7 +6,7 @@
     <title>일기</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
-  <body class="chat-page">
+  <body class="chat-page diary-page">
     <header class="topbar">
       <div class="topbar-title">일기</div>
       <nav class="topbar-actions">
@@ -28,23 +28,67 @@
 
     <main class="diary">
       <section class="diary-editor">
-        <h2 class="section-title">오늘의 기록</h2>
-        <form method="post" action="{{ url_for('diary_post') }}">
+        <div class="diary-editor-head">
+          <h2 class="section-title">{{ "일기 수정" if editing else "오늘의 기록" }}</h2>
+          {% if editing %}
+            <span class="diary-editing">수정 중</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{{ url_for('diary_edit_post', entry_id=editing.id) if editing else url_for('diary_post') }}">
+          <input type="hidden" name="q" value="{{ search_query or '' }}" />
+          <input type="hidden" name="start_date" value="{{ start_date or '' }}" />
+          <input type="hidden" name="end_date" value="{{ end_date or '' }}" />
+
           <label class="label">날짜</label>
-          <input class="input" type="date" name="entry_date" value="{{ today }}" />
+          <input class="input" type="date" name="entry_date" value="{{ editing.entry_date_value if editing else today }}" />
 
           <label class="label">제목</label>
-          <input class="input" type="text" name="title" placeholder="무제" />
+          <input class="input" type="text" name="title" placeholder="무제" value="{{ editing.title if editing else '' }}" />
 
           <label class="label">내용</label>
-          <textarea class="textarea" name="body" rows="8" placeholder="오늘의 기록을 남겨보세요."></textarea>
+          <textarea class="textarea" name="body" rows="8" placeholder="오늘의 기록을 남겨보세요.">{{ editing.body if editing else '' }}</textarea>
 
-          <button class="btn" type="submit">저장</button>
+          <div class="diary-editor-actions">
+            <button class="btn" type="submit">{{ "수정 저장" if editing else "저장" }}</button>
+            {% if editing %}
+              <a class="link" href="{{ url_for('diary', q=search_query, start_date=start_date, end_date=end_date) }}">수정 취소</a>
+            {% endif %}
+          </div>
         </form>
       </section>
 
+      <section class="diary-controls">
+        <form class="diary-filters" method="get" action="{{ url_for('diary') }}">
+          <label class="label">키워드</label>
+          <input class="input" type="search" name="q" placeholder="제목/내용 검색" value="{{ search_query or '' }}" />
+          <label class="label">기간</label>
+          <div class="diary-range">
+            <input class="input" type="date" name="start_date" value="{{ start_date or '' }}" />
+            <span class="range-sep">~</span>
+            <input class="input" type="date" name="end_date" value="{{ end_date or '' }}" />
+          </div>
+          <div class="diary-filter-actions">
+            <button class="btn btn-secondary" type="submit">필터 적용</button>
+            {% if search_query or start_date or end_date %}
+              <a class="link" href="{{ url_for('diary') }}">필터 초기화</a>
+            {% endif %}
+          </div>
+        </form>
+        <div class="diary-actions">
+          <div class="diary-actions-title">내보내기</div>
+          <div class="diary-actions-buttons">
+            <a class="btn-link" href="{{ url_for('diary_export', format='txt', q=search_query, start_date=start_date, end_date=end_date) }}">TXT</a>
+            <a class="btn-link" href="{{ url_for('diary_export', format='md', q=search_query, start_date=start_date, end_date=end_date) }}">MD</a>
+            <a class="btn-link" href="{{ url_for('diary_export', format='csv', q=search_query, start_date=start_date, end_date=end_date) }}">CSV</a>
+          </div>
+        </div>
+      </section>
+
       <section class="diary-list">
-        <h2 class="section-title">최근 일기</h2>
+        <div class="diary-list-head">
+          <h2 class="section-title">최근 일기</h2>
+          <div class="diary-count">{{ entries|length }}건</div>
+        </div>
         {% if entries %}
           {% for entry in entries %}
             <article class="diary-item">
@@ -53,6 +97,15 @@
                 <div class="diary-title">{{ entry.title }}</div>
               </div>
               <div class="diary-body">{{ entry.body_html }}</div>
+              <div class="diary-item-actions">
+                <a class="link" href="{{ url_for('diary', edit=entry.id, q=search_query, start_date=start_date, end_date=end_date) }}">수정</a>
+                <form method="post" action="{{ url_for('diary_delete_post', entry_id=entry.id) }}">
+                  <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                  <input type="hidden" name="start_date" value="{{ start_date or '' }}" />
+                  <input type="hidden" name="end_date" value="{{ end_date or '' }}" />
+                  <button class="link-button" type="submit" onclick="return confirm('이 일기를 삭제할까요?');">삭제</button>
+                </form>
+              </div>
             </article>
           {% endfor %}
         {% else %}

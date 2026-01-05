@@ -12,6 +12,7 @@ from flask import (
     Flask,
     abort,
     flash,
+    make_response,
     redirect,
     render_template,
     request,
@@ -24,12 +25,18 @@ from backup import maybe_backup_to_github
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
     add_diary_entry,
-    fetch_messages,
+    delete_diary_entry,
     fetch_diary_entries,
+    fetch_messages,
     fetch_senders,
+    get_diary_entry,
     import_messages_canonicalized,
     normalize_db_senders_and_dedup,
     search_messages,
+    serialize_diary_csv,
+    serialize_diary_markdown,
+    serialize_diary_plain,
+    update_diary_entry,
 )
 
 
@@ -92,6 +99,30 @@ def _highlight_html(text: str, term: str | None) -> Markup:
 def _format_ko_date(value: date) -> str:
     weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][value.weekday()]
     return f"{value.year}년 {value.month}월 {value.day}일 {weekday_ko}"
+
+
+def _parse_iso_date(value: str) -> date | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _diary_redirect_args(form) -> dict[str, str]:
+    args: dict[str, str] = {}
+    q = (form.get("q") or "").strip()
+    if q:
+        args["q"] = q
+    start_date = (form.get("start_date") or "").strip()
+    if start_date:
+        args["start_date"] = start_date
+    end_date = (form.get("end_date") or "").strip()
+    if end_date:
+        args["end_date"] = end_date
+    return args
 
 
 def create_app() -> Flask:
@@ -212,7 +243,36 @@ def create_app() -> Flask:
     @app.get("/diary")
     def diary():
         _require_login()
-        entries = fetch_diary_entries(DB_PATH, limit=200)
+        q = (request.args.get("q") or "").strip()
+        start_date_raw = (request.args.get("start_date") or "").strip()
+        end_date_raw = (request.args.get("end_date") or "").strip()
+        edit_id_raw = (request.args.get("edit") or "").strip()
+
+        start_date = _parse_iso_date(start_date_raw)
+        end_date = _parse_iso_date(end_date_raw)
+        if start_date_raw and not start_date:
+            flash("시작 날짜 형식이 올바르지 않습니다.", "error")
+        if end_date_raw and not end_date:
+            flash("종료 날짜 형식이 올바르지 않습니다.", "error")
+
+        entries = fetch_diary_entries(
+            DB_PATH,
+            limit=200,
+            q=q or None,
+            start_date=start_date.isoformat() if start_date else None,
+            end_date=end_date.isoformat() if end_date else None,
+            order="desc",
+        )
+        editing = None
+        if edit_id_raw.isdigit():
+            editing = get_diary_entry(DB_PATH, int(edit_id_raw))
+            if not editing:
+                flash("수정할 일기를 찾지 못했습니다.", "error")
+        elif edit_id_raw:
+            flash("수정할 일기 번호가 올바르지 않습니다.", "error")
+        if editing:
+            editing["entry_date_value"] = str(editing.get("entry_date") or "")
+
         for entry in entries:
             entry_date_raw = str(entry["entry_date"])
             try:
@@ -224,7 +284,11 @@ def create_app() -> Flask:
         return render_template(
             "diary.html",
             entries=entries,
+            editing=editing,
             today=date.today().isoformat(),
+            search_query=q,
+            start_date=start_date.isoformat() if start_date else start_date_raw,
+            end_date=end_date.isoformat() if end_date else end_date_raw,
         )
 
     @app.post("/diary")
@@ -240,18 +304,94 @@ def create_app() -> Flask:
 
         if not entry_date_raw:
             entry_date_raw = date.today().isoformat()
-        try:
-            entry_date = date.fromisoformat(entry_date_raw)
-        except ValueError:
+        entry_date = _parse_iso_date(entry_date_raw)
+        if not entry_date:
             flash("날짜 형식이 올바르지 않습니다.", "error")
-            return redirect(url_for("diary"))
+            return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
         if not title:
             title = "무제"
 
         add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 저장했습니다.", "ok")
-        return redirect(url_for("diary"))
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.post("/diary/<int:entry_id>/edit")
+    def diary_edit_post(entry_id: int):
+        _require_login()
+        entry_date_raw = (request.form.get("entry_date") or "").strip()
+        title = (request.form.get("title") or "").strip()
+        body = (request.form.get("body") or "").strip()
+
+        if not body:
+            flash("내용이 비어있습니다.", "error")
+            return redirect(url_for("diary", edit=entry_id, **_diary_redirect_args(request.form)))
+
+        if not entry_date_raw:
+            entry_date_raw = date.today().isoformat()
+        entry_date = _parse_iso_date(entry_date_raw)
+        if not entry_date:
+            flash("날짜 형식이 올바르지 않습니다.", "error")
+            return redirect(url_for("diary", edit=entry_id, **_diary_redirect_args(request.form)))
+
+        if not title:
+            title = "무제"
+
+        updated = update_diary_entry(DB_PATH, entry_id, entry_date.isoformat(), title, body)
+        if not updated:
+            flash("수정할 일기를 찾지 못했습니다.", "error")
+            return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        flash("일기를 수정했습니다.", "ok")
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.post("/diary/<int:entry_id>/delete")
+    def diary_delete_post(entry_id: int):
+        _require_login()
+        deleted = delete_diary_entry(DB_PATH, entry_id)
+        if deleted:
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash("일기를 삭제했습니다.", "ok")
+        else:
+            flash("삭제할 일기를 찾지 못했습니다.", "error")
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.get("/diary/export")
+    def diary_export():
+        _require_login()
+        fmt = (request.args.get("format") or "txt").strip().lower()
+        q = (request.args.get("q") or "").strip()
+        start_date = _parse_iso_date(request.args.get("start_date") or "")
+        end_date = _parse_iso_date(request.args.get("end_date") or "")
+        entries = fetch_diary_entries(
+            DB_PATH,
+            limit=None,
+            q=q or None,
+            start_date=start_date.isoformat() if start_date else None,
+            end_date=end_date.isoformat() if end_date else None,
+            order="asc",
+        )
+        if fmt == "csv":
+            content = serialize_diary_csv(entries)
+            content_type = "text/csv; charset=utf-8"
+            ext = "csv"
+        elif fmt == "md":
+            content = serialize_diary_markdown(entries)
+            content_type = "text/markdown; charset=utf-8"
+            ext = "md"
+        else:
+            content = serialize_diary_plain(entries)
+            content_type = "text/plain; charset=utf-8"
+            ext = "txt"
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"diary_export_{stamp}.{ext}"
+        resp = make_response(content)
+        resp.headers["Content-Type"] = content_type
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
 
     @app.post("/me")
     def set_me():
