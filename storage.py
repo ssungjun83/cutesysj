@@ -35,6 +35,22 @@ CREATE TABLE IF NOT EXISTS diary_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_diary_entries_date ON diary_entries(entry_date);
+
+CREATE TABLE IF NOT EXISTS memories_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  drive_file_id TEXT NOT NULL UNIQUE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT,
+  caption TEXT,
+  album TEXT,
+  tags TEXT,
+  taken_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_photos_date ON memories_photos(taken_date);
+CREATE INDEX IF NOT EXISTS idx_memories_photos_album ON memories_photos(album);
 """
 
 
@@ -396,4 +412,215 @@ def serialize_diary_csv(entries: list[dict]) -> str:
             ]
         )
     return buf.getvalue()
+
+
+def _normalize_tags(tags: str) -> str:
+    raw = (tags or "").replace("#", " ").strip()
+    if not raw:
+        return ""
+    parts = [part.strip() for part in raw.split(",")]
+    cleaned = [part for part in parts if part]
+    return ", ".join(cleaned)
+
+
+def add_memory_photo(
+    db_path: Path,
+    *,
+    drive_file_id: str,
+    file_name: str,
+    mime_type: str | None = None,
+    caption: str | None = None,
+    album: str | None = None,
+    tags: str | None = None,
+    taken_date: str | None = None,
+) -> bool:
+    init_db(db_path)
+    tags_clean = _normalize_tags(tags or "")
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO memories_photos
+            (drive_file_id, file_name, mime_type, caption, album, tags, taken_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                drive_file_id,
+                file_name,
+                mime_type,
+                caption or "",
+                album or "",
+                tags_clean,
+                taken_date,
+            ),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def upsert_memory_photo(
+    db_path: Path,
+    *,
+    drive_file_id: str,
+    file_name: str,
+    mime_type: str | None = None,
+    taken_date: str | None = None,
+) -> bool:
+    inserted = add_memory_photo(
+        db_path,
+        drive_file_id=drive_file_id,
+        file_name=file_name,
+        mime_type=mime_type,
+        taken_date=taken_date,
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE memories_photos
+            SET file_name = ?,
+                mime_type = ?,
+                taken_date = CASE
+                  WHEN taken_date IS NULL OR taken_date = '' THEN ?
+                  ELSE taken_date
+                END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE drive_file_id = ?
+            """,
+            (file_name, mime_type, taken_date, drive_file_id),
+        )
+        conn.commit()
+    return inserted
+
+
+def fetch_memory_photos(
+    db_path: Path,
+    *,
+    q: str | None = None,
+    album: str | None = None,
+    tag: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int | None = 200,
+    order: str = "desc",
+) -> list[dict]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        params: list[object] = []
+        conditions: list[str] = []
+        if q:
+            like = f"%{_escape_like(q)}%"
+            conditions.append(
+                "(file_name LIKE ? ESCAPE '\\' OR caption LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')"
+            )
+            params.extend([like, like, like, like])
+        if album:
+            conditions.append("album = ?")
+            params.append(album)
+        if tag:
+            like = f"%{_escape_like(tag)}%"
+            conditions.append("tags LIKE ? ESCAPE '\\'")
+            params.append(like)
+        if start_date:
+            conditions.append("taken_date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("taken_date <= ?")
+            params.append(end_date)
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        order_sql = "ASC" if order.lower() == "asc" else "DESC"
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
+        rows = conn.execute(
+            f"""
+            SELECT id, drive_file_id, file_name, mime_type, caption, album, tags, taken_date, created_at, updated_at
+            FROM memories_photos
+            {where_sql}
+            ORDER BY taken_date {order_sql}, id {order_sql}
+            {limit_sql}
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_memory_photo(db_path: Path, photo_id: int) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT id, drive_file_id, file_name, mime_type, caption, album, tags, taken_date, created_at, updated_at
+            FROM memories_photos
+            WHERE id = ?
+            """,
+            (int(photo_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_memory_photo_by_drive_id(db_path: Path, drive_file_id: str) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT id, drive_file_id, file_name, mime_type, caption, album, tags, taken_date, created_at, updated_at
+            FROM memories_photos
+            WHERE drive_file_id = ?
+            """,
+            (drive_file_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_memory_photo(
+    db_path: Path,
+    photo_id: int,
+    *,
+    caption: str,
+    album: str,
+    tags: str,
+    taken_date: str | None,
+) -> bool:
+    init_db(db_path)
+    tags_clean = _normalize_tags(tags)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE memories_photos
+            SET caption = ?,
+                album = ?,
+                tags = ?,
+                taken_date = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (caption, album, tags_clean, taken_date, int(photo_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def delete_memory_photo(db_path: Path, photo_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM memories_photos WHERE id = ?", (int(photo_id),))
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def fetch_memory_albums(db_path: Path) -> list[str]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT album
+            FROM memories_photos
+            WHERE album IS NOT NULL AND album <> ''
+            ORDER BY album ASC
+            """
+        ).fetchall()
+    return [str(row[0]) for row in rows]
 

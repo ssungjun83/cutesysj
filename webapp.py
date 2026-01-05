@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
 import secrets
@@ -17,26 +18,43 @@ from flask import (
     render_template,
     request,
     session,
+    send_file,
     url_for,
 )
 from werkzeug.security import check_password_hash
 
 from backup import maybe_backup_to_github
+from drive_client import (
+    DriveConfigError,
+    delete_drive_file,
+    download_drive_file,
+    get_drive_config_status,
+    get_drive_folder_id,
+    list_drive_images,
+    upload_drive_file,
+)
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
     add_diary_entry,
     delete_diary_entry,
     fetch_diary_entries,
     fetch_messages,
+    fetch_memory_albums,
+    fetch_memory_photos,
     fetch_senders,
     get_diary_entry,
     import_messages_canonicalized,
+    get_memory_photo,
     normalize_db_senders_and_dedup,
     search_messages,
     serialize_diary_csv,
     serialize_diary_markdown,
     serialize_diary_plain,
     update_diary_entry,
+    add_memory_photo,
+    update_memory_photo,
+    delete_memory_photo,
+    upsert_memory_photo,
 )
 
 
@@ -123,6 +141,34 @@ def _diary_redirect_args(form) -> dict[str, str]:
     if end_date:
         args["end_date"] = end_date
     return args
+
+
+def _memories_redirect_args(form) -> dict[str, str]:
+    args: dict[str, str] = {}
+    q = (form.get("filter_q") or form.get("q") or "").strip()
+    if q:
+        args["q"] = q
+    album = (form.get("filter_album") or form.get("album") or "").strip()
+    if album:
+        args["album"] = album
+    tag = (form.get("filter_tag") or form.get("tag") or "").strip()
+    if tag:
+        args["tag"] = tag
+    start_date = (form.get("filter_start_date") or form.get("start_date") or "").strip()
+    if start_date:
+        args["start_date"] = start_date
+    end_date = (form.get("filter_end_date") or form.get("end_date") or "").strip()
+    if end_date:
+        args["end_date"] = end_date
+    return args
+
+
+def _split_tags(tags: str) -> list[str]:
+    raw = (tags or "").strip()
+    if not raw:
+        return []
+    parts = [part.strip() for part in raw.split(",")]
+    return [part for part in parts if part]
 
 
 def create_app() -> Flask:
@@ -392,6 +438,213 @@ def create_app() -> Flask:
         resp.headers["Content-Type"] = content_type
         resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
+
+    @app.get("/memories")
+    def memories():
+        _require_login()
+        q = (request.args.get("q") or "").strip()
+        album = (request.args.get("album") or "").strip()
+        tag = (request.args.get("tag") or "").strip()
+        start_date_raw = (request.args.get("start_date") or "").strip()
+        end_date_raw = (request.args.get("end_date") or "").strip()
+        edit_id_raw = (request.args.get("edit") or "").strip()
+
+        start_date = _parse_iso_date(start_date_raw)
+        end_date = _parse_iso_date(end_date_raw)
+        if start_date_raw and not start_date:
+            flash("시작 날짜 형식이 올바르지 않습니다.", "error")
+        if end_date_raw and not end_date:
+            flash("종료 날짜 형식이 올바르지 않습니다.", "error")
+
+        photos = fetch_memory_photos(
+            DB_PATH,
+            q=q or None,
+            album=album or None,
+            tag=tag or None,
+            start_date=start_date.isoformat() if start_date else None,
+            end_date=end_date.isoformat() if end_date else None,
+            limit=200,
+            order="desc",
+        )
+        albums = fetch_memory_albums(DB_PATH)
+
+        editing = None
+        if edit_id_raw.isdigit():
+            editing = get_memory_photo(DB_PATH, int(edit_id_raw))
+            if not editing:
+                flash("수정할 사진을 찾지 못했습니다.", "error")
+        elif edit_id_raw:
+            flash("수정할 사진 번호가 올바르지 않습니다.", "error")
+
+        for photo in photos:
+            date_raw = str(photo.get("taken_date") or "")
+            date_obj = _parse_iso_date(date_raw)
+            photo["date_ko"] = _format_ko_date(date_obj) if date_obj else date_raw
+            photo["tags_list"] = _split_tags(str(photo.get("tags") or ""))
+
+        drive_ready, drive_hint = get_drive_config_status()
+
+        return render_template(
+            "memories.html",
+            photos=photos,
+            albums=albums,
+            editing=editing,
+            search_query=q,
+            selected_album=album,
+            tag_query=tag,
+            start_date=start_date.isoformat() if start_date else start_date_raw,
+            end_date=end_date.isoformat() if end_date else end_date_raw,
+            drive_ready=drive_ready,
+            drive_hint=drive_hint,
+            today=date.today().isoformat(),
+        )
+
+    @app.post("/memories/upload")
+    def memories_upload():
+        _require_login()
+        files = request.files.getlist("files")
+        if not files:
+            flash("업로드할 파일이 없습니다.", "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+        caption = (request.form.get("caption") or "").strip()
+        album = (request.form.get("album") or "").strip()
+        tags = (request.form.get("tags") or "").strip()
+        taken_date_raw = (request.form.get("taken_date") or "").strip()
+        taken_date = _parse_iso_date(taken_date_raw)
+
+        if taken_date_raw and not taken_date:
+            flash("날짜 형식이 올바르지 않습니다.", "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+        try:
+            folder_id = get_drive_folder_id()
+        except DriveConfigError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+        uploaded = 0
+        for file_storage in files:
+            if not file_storage or not file_storage.filename:
+                continue
+            try:
+                created = upload_drive_file(file_storage, folder_id)
+            except Exception as exc:
+                flash(f"업로드 실패: {file_storage.filename}", "error")
+                continue
+            add_memory_photo(
+                DB_PATH,
+                drive_file_id=created.file_id,
+                file_name=created.name,
+                mime_type=created.mime_type,
+                caption=caption,
+                album=album,
+                tags=tags,
+                taken_date=(taken_date.isoformat() if taken_date else (created.created_time or ""))[:10],
+            )
+            uploaded += 1
+
+        if uploaded:
+            flash(f"업로드 완료: {uploaded}개", "ok")
+        return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+    @app.post("/memories/sync")
+    def memories_sync():
+        _require_login()
+        try:
+            folder_id = get_drive_folder_id()
+            files = list_drive_images(folder_id)
+        except DriveConfigError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+        except Exception:
+            flash("드라이브 동기화에 실패했습니다.", "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+        inserted = 0
+        for item in files:
+            added = upsert_memory_photo(
+                DB_PATH,
+                drive_file_id=item.file_id,
+                file_name=item.name,
+                mime_type=item.mime_type,
+                taken_date=(item.created_time or "")[:10] if item.created_time else None,
+            )
+            if added:
+                inserted += 1
+        flash(f"동기화 완료: {inserted}개 추가", "ok")
+        return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+    @app.post("/memories/<int:photo_id>/edit")
+    def memories_edit(photo_id: int):
+        _require_login()
+        caption = (request.form.get("caption") or "").strip()
+        album = (request.form.get("album") or "").strip()
+        tags = (request.form.get("tags") or "").strip()
+        taken_date_raw = (request.form.get("taken_date") or "").strip()
+        taken_date = _parse_iso_date(taken_date_raw)
+        if taken_date_raw and not taken_date:
+            flash("날짜 형식이 올바르지 않습니다.", "error")
+            return redirect(url_for("memories", edit=photo_id, **_memories_redirect_args(request.form)))
+
+        updated = update_memory_photo(
+            DB_PATH,
+            photo_id,
+            caption=caption,
+            album=album,
+            tags=tags,
+            taken_date=taken_date.isoformat() if taken_date else None,
+        )
+        if not updated:
+            flash("수정할 사진을 찾지 못했습니다.", "error")
+        else:
+            flash("사진 정보를 수정했습니다.", "ok")
+        return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+    @app.post("/memories/<int:photo_id>/delete")
+    def memories_delete(photo_id: int):
+        _require_login()
+        delete_drive = (request.form.get("delete_drive") or "").strip() == "1"
+        photo = get_memory_photo(DB_PATH, photo_id)
+        if not photo:
+            flash("삭제할 사진을 찾지 못했습니다.", "error")
+            return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+        deleted = delete_memory_photo(DB_PATH, photo_id)
+        if deleted:
+            if delete_drive:
+                try:
+                    delete_drive_file(str(photo.get("drive_file_id")))
+                except Exception:
+                    flash("드라이브 파일 삭제에 실패했습니다.", "error")
+            flash("사진을 삭제했습니다.", "ok")
+        return redirect(url_for("memories", **_memories_redirect_args(request.form)))
+
+    @app.get("/memories/<int:photo_id>")
+    def memories_detail(photo_id: int):
+        _require_login()
+        photo = get_memory_photo(DB_PATH, photo_id)
+        if not photo:
+            abort(404)
+        date_raw = str(photo.get("taken_date") or "")
+        date_obj = _parse_iso_date(date_raw)
+        photo["date_ko"] = _format_ko_date(date_obj) if date_obj else date_raw
+        photo["tags_list"] = _split_tags(str(photo.get("tags") or ""))
+        return render_template(
+            "memories_detail.html",
+            photo=photo,
+            back_query=_memories_redirect_args(request.args),
+        )
+
+    @app.get("/memories/media/<file_id>")
+    def memories_media(file_id: str):
+        _require_login()
+        try:
+            content, mime_type = download_drive_file(file_id)
+        except DriveConfigError:
+            abort(404)
+        except Exception:
+            abort(404)
+        return send_file(io.BytesIO(content), mimetype=mime_type)
 
     @app.post("/me")
     def set_me():

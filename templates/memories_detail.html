@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>추억 상세</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page memories-page">
+    <header class="topbar">
+      <div class="topbar-title">추억 상세</div>
+      <nav class="topbar-actions">
+        <div class="nav-tabs">
+          <a class="tab" href="{{ url_for('index') }}">대화</a>
+          <a class="tab" href="{{ url_for('diary') }}">일기</a>
+          <a class="tab is-active" href="{{ url_for('memories') }}">추억</a>
+        </div>
+        <div class="nav-links">
+          <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+          <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="memories-detail">
+      <div class="memories-detail-card">
+        <div class="memories-detail-image">
+          <img src="{{ url_for('memories_media', file_id=photo.drive_file_id) }}" alt="{{ photo.caption or photo.file_name }}" />
+        </div>
+        <div class="memories-detail-info">
+          <div class="memories-detail-date">{{ photo.date_ko }}</div>
+          <h1 class="memories-detail-title">{{ photo.caption or photo.file_name }}</h1>
+          {% if photo.album %}
+            <div class="memories-detail-album">앨범: {{ photo.album }}</div>
+          {% endif %}
+          {% if photo.tags_list %}
+            <div class="memories-detail-tags">
+              {% for tag in photo.tags_list %}
+                <span class="tag">#{{ tag }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <div class="memories-detail-actions">
+            <a class="link" href="{{ url_for('memories', **back_query) }}">← 목록으로</a>
+            <a class="link" href="{{ url_for('memories', edit=photo.id, **back_query) }}">정보 수정</a>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

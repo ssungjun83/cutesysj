@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>추억</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page memories-page">
+    <header class="topbar">
+      <div class="topbar-title">추억</div>
+      <nav class="topbar-actions">
+        <div class="nav-tabs">
+          <a class="tab" href="{{ url_for('index') }}">대화</a>
+          <a class="tab" href="{{ url_for('diary') }}">일기</a>
+          <a class="tab is-active" href="{{ url_for('memories') }}">추억</a>
+        </div>
+        <div class="nav-links">
+          <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+          <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        </div>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% if not drive_ready %}
+      <div class="memories-alert">
+        <strong>Drive 설정 필요:</strong> {{ drive_hint }}
+      </div>
+    {% endif %}
+
+    <main class="memories">
+      <section class="memories-tools">
+        <div class="memories-card">
+          <h2 class="section-title">사진 업로드</h2>
+          <form method="post" action="{{ url_for('memories_upload') }}" enctype="multipart/form-data">
+            <input type="hidden" name="filter_q" value="{{ search_query or '' }}" />
+            <input type="hidden" name="filter_album" value="{{ selected_album or '' }}" />
+            <input type="hidden" name="filter_tag" value="{{ tag_query or '' }}" />
+            <input type="hidden" name="filter_start_date" value="{{ start_date or '' }}" />
+            <input type="hidden" name="filter_end_date" value="{{ end_date or '' }}" />
+
+            <label class="label">파일 (여러 장 가능)</label>
+            <input class="input" type="file" name="files" accept="image/*" multiple {% if not drive_ready %}disabled{% endif %} />
+
+            <label class="label">캡션</label>
+            <input class="input" type="text" name="caption" placeholder="짧은 한 줄 메모" {% if not drive_ready %}disabled{% endif %} />
+
+            <label class="label">앨범</label>
+            <input class="input" type="text" name="album" placeholder="예: 여행, 일상" {% if not drive_ready %}disabled{% endif %} />
+
+            <label class="label">태그 (쉼표로 구분)</label>
+            <input class="input" type="text" name="tags" placeholder="예: 바다, 가족" {% if not drive_ready %}disabled{% endif %} />
+
+            <label class="label">촬영일</label>
+            <input class="input" type="date" name="taken_date" value="{{ today }}" {% if not drive_ready %}disabled{% endif %} />
+
+            <button class="btn" type="submit" {% if not drive_ready %}disabled{% endif %}>Drive로 업로드</button>
+          </form>
+        </div>
+
+        {% if editing %}
+          <div class="memories-card memories-edit">
+            <div class="memories-edit-head">
+              <h2 class="section-title">사진 정보 수정</h2>
+              <span class="memories-editing">수정 중</span>
+            </div>
+            <form method="post" action="{{ url_for('memories_edit', photo_id=editing.id) }}">
+              <input type="hidden" name="filter_q" value="{{ search_query or '' }}" />
+              <input type="hidden" name="filter_album" value="{{ selected_album or '' }}" />
+              <input type="hidden" name="filter_tag" value="{{ tag_query or '' }}" />
+              <input type="hidden" name="filter_start_date" value="{{ start_date or '' }}" />
+              <input type="hidden" name="filter_end_date" value="{{ end_date or '' }}" />
+
+              <label class="label">캡션</label>
+              <input class="input" type="text" name="caption" value="{{ editing.caption or '' }}" />
+
+              <label class="label">앨범</label>
+              <input class="input" type="text" name="album" value="{{ editing.album or '' }}" />
+
+              <label class="label">태그</label>
+              <input class="input" type="text" name="tags" value="{{ editing.tags or '' }}" />
+
+              <label class="label">촬영일</label>
+              <input class="input" type="date" name="taken_date" value="{{ editing.taken_date or '' }}" />
+
+              <div class="memories-edit-actions">
+                <button class="btn" type="submit">수정 저장</button>
+                <a class="link" href="{{ url_for('memories', q=search_query, album=selected_album, tag=tag_query, start_date=start_date, end_date=end_date) }}">수정 취소</a>
+              </div>
+            </form>
+          </div>
+        {% endif %}
+
+        <div class="memories-card">
+          <h2 class="section-title">검색 / 필터</h2>
+          <form method="get" action="{{ url_for('memories') }}">
+            <label class="label">키워드</label>
+            <input class="input" type="search" name="q" placeholder="캡션/앨범/태그" value="{{ search_query or '' }}" />
+
+            <label class="label">앨범</label>
+            <select class="select" name="album">
+              <option value="">전체</option>
+              {% for name in albums %}
+                <option value="{{ name }}" {% if selected_album == name %}selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+
+            <label class="label">태그</label>
+            <input class="input" type="text" name="tag" placeholder="태그 한 개" value="{{ tag_query or '' }}" />
+
+            <label class="label">기간</label>
+            <div class="memories-range">
+              <input class="input" type="date" name="start_date" value="{{ start_date or '' }}" />
+              <span class="range-sep">~</span>
+              <input class="input" type="date" name="end_date" value="{{ end_date or '' }}" />
+            </div>
+
+            <div class="memories-filter-actions">
+              <button class="btn btn-secondary" type="submit">필터 적용</button>
+              {% if search_query or selected_album or tag_query or start_date or end_date %}
+                <a class="link" href="{{ url_for('memories') }}">초기화</a>
+              {% endif %}
+            </div>
+          </form>
+        </div>
+
+        <div class="memories-card">
+          <h2 class="section-title">Drive 동기화</h2>
+          <p class="sub">Drive 폴더에 직접 올린 사진을 가져옵니다.</p>
+          <form method="post" action="{{ url_for('memories_sync') }}">
+            <input type="hidden" name="filter_q" value="{{ search_query or '' }}" />
+            <input type="hidden" name="filter_album" value="{{ selected_album or '' }}" />
+            <input type="hidden" name="filter_tag" value="{{ tag_query or '' }}" />
+            <input type="hidden" name="filter_start_date" value="{{ start_date or '' }}" />
+            <input type="hidden" name="filter_end_date" value="{{ end_date or '' }}" />
+            <button class="btn btn-secondary" type="submit" {% if not drive_ready %}disabled{% endif %}>Drive에서 불러오기</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="memories-list">
+        <div class="memories-list-head">
+          <h2 class="section-title">사진 모음</h2>
+          <div class="memories-count">{{ photos|length }}장</div>
+        </div>
+        {% if photos %}
+          <div class="memories-grid">
+            {% for photo in photos %}
+              <article class="memory-card">
+                <a class="memory-thumb" href="{{ url_for('memories_detail', photo_id=photo.id, q=search_query, album=selected_album, tag=tag_query, start_date=start_date, end_date=end_date) }}">
+                  <img src="{{ url_for('memories_media', file_id=photo.drive_file_id) }}" alt="{{ photo.caption or photo.file_name }}" loading="lazy" decoding="async" />
+                </a>
+                <div class="memory-info">
+                  <div class="memory-date">{{ photo.date_ko }}</div>
+                  <div class="memory-caption">{{ photo.caption or photo.file_name }}</div>
+                  {% if photo.album %}
+                    <div class="memory-album">{{ photo.album }}</div>
+                  {% endif %}
+                  {% if photo.tags_list %}
+                    <div class="memory-tags">
+                      {% for tag in photo.tags_list %}
+                        <span class="tag">#{{ tag }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+                <div class="memory-actions">
+                  <a class="link" href="{{ url_for('memories', edit=photo.id, q=search_query, album=selected_album, tag=tag_query, start_date=start_date, end_date=end_date) }}">수정</a>
+                  <form method="post" action="{{ url_for('memories_delete', photo_id=photo.id) }}">
+                    <input type="hidden" name="filter_q" value="{{ search_query or '' }}" />
+                    <input type="hidden" name="filter_album" value="{{ selected_album or '' }}" />
+                    <input type="hidden" name="filter_tag" value="{{ tag_query or '' }}" />
+                    <input type="hidden" name="filter_start_date" value="{{ start_date or '' }}" />
+                    <input type="hidden" name="filter_end_date" value="{{ end_date or '' }}" />
+                    <label class="memory-delete-option">
+                      <input type="checkbox" name="delete_drive" value="1" />
+                      Drive에서도 삭제
+                    </label>
+                    <button class="link-button" type="submit" onclick="return confirm('이 사진을 삭제할까요?');">삭제</button>
+                  </form>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="memories-empty">아직 등록된 사진이 없습니다.</div>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

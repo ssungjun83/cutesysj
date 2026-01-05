@@ -56,6 +56,25 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 - 같은 파일을 여러 번 올려도 **중복은 자동으로 제외**됩니다.
 - (선택) 가져오기 시 이름을 통일하려면 환경변수 `CHAT_APP_CANONICAL_ME_NAME` / `CHAT_APP_CANONICAL_OTHER_NAME`를 설정하세요. (가져오기 화면의 “기존 데이터 정리”로 과거 데이터도 일괄 적용 가능)
 
+## 추억 사진 탭 (Google Drive 연동)
+
+추억 탭은 **Google Drive 폴더를 사진 보관소로 사용**합니다.  
+앱에서 업로드하면 Drive로 올라가고, Drive에 직접 올린 사진은 “Drive에서 불러오기”로 가져옵니다.
+
+준비물
+1. Google Cloud에서 **Drive API 활성화**
+2. **서비스 계정** 생성 후 JSON 키 다운로드
+3. Drive에서 사진 폴더를 만들고, **서비스 계정 이메일과 폴더 공유**
+4. 환경변수 설정
+
+필수 환경변수
+- `CHAT_APP_DRIVE_FOLDER_ID`: 사진 폴더 ID
+- `CHAT_APP_DRIVE_SERVICE_ACCOUNT_JSON` 또는 `CHAT_APP_DRIVE_SERVICE_ACCOUNT_B64`
+
+메모
+- Render에서는 서비스의 Environment에 위 변수를 추가하세요.
+- 개인정보 보호를 위해 Drive 폴더는 “링크 공유” 대신 **서비스 계정만 공유**하는 방식을 권장합니다.
+
 ## GitHub 백업 (Render에서 자동 업로드)
 
 Render에서 가져오기/정리를 할 때마다 DB를 텍스트로 내보내서 GitHub에 덮어쓰기 업로드할 수 있습니다.

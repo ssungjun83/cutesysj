@@ -13,6 +13,7 @@
         <div class="nav-tabs">
           <a class="tab is-active" href="{{ url_for('index', view='chat', q=search_query) }}">대화</a>
           <a class="tab" href="{{ url_for('diary') }}">일기</a>
+          <a class="tab" href="{{ url_for('memories') }}">추억</a>
         </div>
         <div class="nav-links">
           <a class="link" href="{{ url_for('index', view='txt', q=search_query) }}">텍스트 형식</a>
