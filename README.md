@@ -68,7 +68,7 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 4. 환경변수 설정
 
 필수 환경변수
-- `CHAT_APP_DRIVE_FOLDER_ID`: 사진 폴더 ID
+- `CHAT_APP_DRIVE_FOLDER_ID` 또는 `CHAT_APP_DRIVE_FOLDER_URL`: 사진 폴더 ID/URL
 - `CHAT_APP_DRIVE_SERVICE_ACCOUNT_JSON` 또는 `CHAT_APP_DRIVE_SERVICE_ACCOUNT_B64`
 
 메모

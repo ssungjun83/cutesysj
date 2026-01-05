@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from dataclasses import dataclass
 
 from google.oauth2 import service_account
@@ -51,9 +52,28 @@ def get_drive_config_status() -> tuple[bool, str]:
 
 def get_drive_folder_id() -> str:
     folder_id = os.getenv("CHAT_APP_DRIVE_FOLDER_ID", "").strip()
-    if not folder_id:
-        raise DriveConfigError("CHAT_APP_DRIVE_FOLDER_ID가 필요합니다.")
-    return folder_id
+    if folder_id:
+        return folder_id
+    folder_url = os.getenv("CHAT_APP_DRIVE_FOLDER_URL", "").strip()
+    if folder_url:
+        parsed = _extract_drive_folder_id(folder_url)
+        if parsed:
+            return parsed
+        raise DriveConfigError("CHAT_APP_DRIVE_FOLDER_URL에서 폴더 ID를 찾지 못했습니다.")
+    raise DriveConfigError("CHAT_APP_DRIVE_FOLDER_ID 또는 CHAT_APP_DRIVE_FOLDER_URL이 필요합니다.")
+
+
+def _extract_drive_folder_id(value: str) -> str | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", value)
+    if match:
+        return match.group(1)
+    match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", value)
+    if match:
+        return match.group(1)
+    return None
 
 
 def _get_drive_service():

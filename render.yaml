@@ -12,6 +12,8 @@ services:
         value: /data
       - key: CHAT_APP_DRIVE_FOLDER_ID
         sync: false
+      - key: CHAT_APP_DRIVE_FOLDER_URL
+        sync: false
       - key: CHAT_APP_DRIVE_SERVICE_ACCOUNT_JSON
         sync: false
       - key: CHAT_APP_DRIVE_SERVICE_ACCOUNT_B64
