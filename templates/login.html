@@ -27,6 +27,17 @@
         <button class="btn" type="submit">입장</button>
       </form>
     </div>
+    <script>
+      (function () {
+        var form = document.querySelector("form");
+        if (!form) return;
+        form.addEventListener("submit", function () {
+          try {
+            sessionStorage.setItem("chat_auth_v1", "1");
+          } catch (e) {}
+        });
+      })();
+    </script>
   </body>
 </html>
 

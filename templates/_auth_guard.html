@@ -1,0 +1,48 @@
+<script>
+  (function () {
+    var storageKey = "chat_auth_v1";
+    var requestKey = "chat_auth_request_v1";
+    var responseKey = "chat_auth_response_v1";
+    var token = null;
+    try {
+      token = sessionStorage.getItem(storageKey);
+    } catch (e) {}
+
+    function respond() {
+      if (!token) return;
+      try {
+        localStorage.setItem(responseKey, token + ":" + Date.now());
+      } catch (e) {}
+    }
+
+    if (!token) {
+      var resolved = false;
+      function onStorage(e) {
+        if (e.key === responseKey && e.newValue) {
+          resolved = true;
+          try {
+            sessionStorage.setItem(storageKey, e.newValue);
+          } catch (err) {}
+          window.removeEventListener("storage", onStorage);
+          location.reload();
+        }
+      }
+      window.addEventListener("storage", onStorage);
+      try {
+        localStorage.setItem(requestKey, String(Date.now()));
+      } catch (err) {}
+      setTimeout(function () {
+        if (resolved) return;
+        window.removeEventListener("storage", onStorage);
+        location.href = "/logout";
+      }, 700);
+      return;
+    }
+
+    window.addEventListener("storage", function (e) {
+      if (e.key === requestKey) {
+        respond();
+      }
+    });
+  })();
+</script>
