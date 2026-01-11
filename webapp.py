@@ -4,7 +4,7 @@ import io
 import os
 from pathlib import Path
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass
 from markupsafe import Markup, escape
 
@@ -187,6 +187,7 @@ def create_app() -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_PERMANENT=False,
+        SESSION_ABSOLUTE_TIMEOUT=timedelta(minutes=20),
     )
 
     canonical_me = os.getenv("CHAT_APP_CANONICAL_ME_NAME", "이성준").strip() or "이성준"
@@ -201,14 +202,22 @@ def create_app() -> Flask:
     @app.before_request
     def _auth_flag_to_session():
         session["auth_disabled"] = bool(app.config.get("AUTH_DISABLED"))
-
-    @app.after_request
-    def _clear_login_after_response(response):
-        if app.config.get("AUTH_DISABLED"):
-            return response
-        if session.get("logged_in") and response.status_code not in {301, 302, 303, 307, 308}:
-            session.pop("logged_in", None)
-        return response
+        if session.get("auth_disabled"):
+            return
+        if session.get("logged_in"):
+            now = datetime.utcnow()
+            login_at = session.get("login_at")
+            if login_at:
+                try:
+                    login_dt = datetime.fromisoformat(login_at)
+                except ValueError:
+                    login_dt = None
+                if login_dt and now - login_dt > app.config["SESSION_ABSOLUTE_TIMEOUT"]:
+                    session.clear()
+                    session["auth_disabled"] = bool(app.config.get("AUTH_DISABLED"))
+                    return
+            else:
+                session["login_at"] = now.isoformat(timespec="seconds")
 
     @app.errorhandler(401)
     def _unauthorized(_err):
@@ -226,12 +235,14 @@ def create_app() -> Flask:
     def login_post():
         if app.config.get("AUTH_DISABLED"):
             session["logged_in"] = True
+            session["login_at"] = datetime.utcnow().isoformat(timespec="seconds")
             return redirect(url_for("index"))
         password = request.form.get("password", "")
         if not check_password_hash(app.config["CHAT_PASSWORD_HASH"], password):
             flash("비밀번호가 틀렸습니다.", "error")
             return redirect(url_for("login"))
         session["logged_in"] = True
+        session["login_at"] = datetime.utcnow().isoformat(timespec="seconds")
         return redirect(url_for("index"))
 
     @app.get("/logout")
