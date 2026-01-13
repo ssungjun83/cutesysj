@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS diary_entries (
 
 CREATE INDEX IF NOT EXISTS idx_diary_entries_date ON diary_entries(entry_date);
 
+CREATE TABLE IF NOT EXISTS diary_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diary_comments_entry ON diary_comments(entry_id);
+
 CREATE TABLE IF NOT EXISTS memories_photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   drive_file_id TEXT NOT NULL UNIQUE,
@@ -363,9 +372,74 @@ def update_diary_entry(db_path: Path, entry_id: int, entry_date: str, title: str
 def delete_diary_entry(db_path: Path, entry_id: int) -> bool:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM diary_comments WHERE entry_id = ?", (int(entry_id),))
         cur = conn.execute("DELETE FROM diary_entries WHERE id = ?", (int(entry_id),))
         conn.commit()
         return cur.rowcount == 1
+
+
+def add_diary_comment(db_path: Path, entry_id: int, body: str) -> int:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO diary_comments (entry_id, body)
+            VALUES (?, ?)
+            """,
+            (int(entry_id), body),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def fetch_diary_comments(db_path: Path, entry_ids: list[int]) -> dict[int, list[dict]]:
+    init_db(db_path)
+    if not entry_ids:
+        return {}
+    ids = [int(entry_id) for entry_id in entry_ids]
+    placeholders = ", ".join("?" for _ in ids)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"""
+            SELECT id, entry_id, body, created_at
+            FROM diary_comments
+            WHERE entry_id IN ({placeholders})
+            ORDER BY entry_id ASC, id ASC
+            """,
+            ids,
+        ).fetchall()
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        entry_id = int(row["entry_id"])
+        grouped.setdefault(entry_id, []).append(dict(row))
+    return grouped
+
+
+def delete_diary_comment(db_path: Path, comment_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM diary_comments WHERE id = ?", (int(comment_id),))
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def _format_comment_lines(comments: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for comment in comments:
+        created_at = str(comment.get("created_at") or "").strip()
+        body = str(comment.get("body") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        body_lines = [line for line in body.split("\n")] if body else [""]
+        prefix = f"- {created_at}".strip()
+        first_line = body_lines[0].strip()
+        if first_line:
+            line = f"{prefix} {first_line}".strip()
+        else:
+            line = prefix or "-"
+        lines.append(line)
+        for extra in body_lines[1:]:
+            lines.append(f"  {extra}")
+    return lines
 
 
 def serialize_diary_plain(entries: list[dict]) -> str:
@@ -377,6 +451,10 @@ def serialize_diary_plain(entries: list[dict]) -> str:
         lines.append(f"{entry_date} | {title}")
         if body:
             lines.append(body)
+        comments = entry.get("comments") or []
+        if comments:
+            lines.append("댓글")
+            lines.extend(_format_comment_lines(comments))
         lines.append("")
     if not lines:
         return ""
@@ -392,6 +470,10 @@ def serialize_diary_markdown(entries: list[dict]) -> str:
         lines.append(f"## {entry_date} - {title}")
         if body:
             lines.append(body)
+        comments = entry.get("comments") or []
+        if comments:
+            lines.append("### 댓글")
+            lines.extend(_format_comment_lines(comments))
         lines.append("")
     if not lines:
         return ""
@@ -401,14 +483,17 @@ def serialize_diary_markdown(entries: list[dict]) -> str:
 def serialize_diary_csv(entries: list[dict]) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(["entry_date", "title", "body", "created_at"])
+    writer.writerow(["entry_date", "title", "body", "created_at", "comments"])
     for entry in entries:
+        comments = entry.get("comments") or []
+        comments_text = "\n".join(_format_comment_lines(comments)) if comments else ""
         writer.writerow(
             [
                 entry.get("entry_date"),
                 entry.get("title"),
                 entry.get("body"),
                 entry.get("created_at"),
+                comments_text,
             ]
         )
     return buf.getvalue()

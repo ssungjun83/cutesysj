@@ -103,6 +103,38 @@
                 <div class="diary-title">{{ entry.title }}</div>
               </div>
               <div class="diary-body">{{ entry.body_html }}</div>
+              <div class="diary-comments">
+                <div class="diary-comments-head">댓글 {{ entry.comments|length }}개</div>
+                {% if entry.comments %}
+                  <div class="diary-comment-list">
+                    {% for comment in entry.comments %}
+                      <div class="diary-comment">
+                        <div class="diary-comment-meta">
+                          <span class="diary-comment-date">{{ comment.created_at_display or comment.created_at }}</span>
+                          <form method="post" action="{{ url_for('diary_comment_delete', comment_id=comment.id) }}">
+                            <input type="hidden" name="entry_id" value="{{ entry.id }}" />
+                            <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                            <input type="hidden" name="start_date" value="{{ start_date or '' }}" />
+                            <input type="hidden" name="end_date" value="{{ end_date or '' }}" />
+                            <button class="link-button" type="submit" onclick="return confirm('이 댓글을 삭제할까요?');">삭제</button>
+                          </form>
+                        </div>
+                        <div class="diary-comment-body">{{ comment.body_html }}</div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="diary-comments-empty">아직 댓글이 없습니다.</div>
+                {% endif %}
+                <form class="diary-comment-form" method="post" action="{{ url_for('diary_comment_post', entry_id=entry.id) }}">
+                  <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                  <input type="hidden" name="start_date" value="{{ start_date or '' }}" />
+                  <input type="hidden" name="end_date" value="{{ end_date or '' }}" />
+                  <label class="label">댓글</label>
+                  <textarea class="textarea" name="comment_body" rows="3" placeholder="댓글을 남겨주세요."></textarea>
+                  <button class="btn btn-secondary" type="submit">댓글 달기</button>
+                </form>
+              </div>
               <div class="diary-item-actions">
                 <a class="link" href="{{ url_for('diary', edit=entry.id, q=search_query, start_date=start_date, end_date=end_date) }}">수정</a>
                 <form method="post" action="{{ url_for('diary_delete_post', entry_id=entry.id) }}">

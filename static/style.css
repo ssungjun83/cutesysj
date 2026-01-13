@@ -315,6 +315,40 @@ body {
 .diary-title { font-weight: 700; }
 .diary-body { line-height: 1.7; }
 .diary-item-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.diary-comments {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.diary-comments-head { font-size: 12px; color: var(--muted); }
+.diary-comment-list { display: flex; flex-direction: column; gap: 8px; }
+.diary-comment {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.diary-comment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.diary-comment-body { line-height: 1.6; font-size: 13px; }
+.diary-comments-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.diary-comment-form .btn { width: auto; }
 .link-button {
   border: none;
   background: none;

@@ -36,7 +36,10 @@ from drive_client import (
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
     add_diary_entry,
+    add_diary_comment,
     delete_diary_entry,
+    delete_diary_comment,
+    fetch_diary_comments,
     fetch_diary_entries,
     fetch_messages,
     fetch_memory_albums,
@@ -127,6 +130,17 @@ def _parse_iso_date(value: str) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _format_comment_ts(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return raw
+    return parsed.strftime("%Y-%m-%d %H:%M")
 
 
 def _diary_redirect_args(form) -> dict[str, str]:
@@ -327,6 +341,7 @@ def create_app() -> Flask:
             end_date=end_date.isoformat() if end_date else None,
             order="desc",
         )
+        comments_by_entry = fetch_diary_comments(DB_PATH, [entry["id"] for entry in entries])
         editing = None
         if edit_id_raw.isdigit():
             editing = get_diary_entry(DB_PATH, int(edit_id_raw))
@@ -345,6 +360,11 @@ def create_app() -> Flask:
             except ValueError:
                 entry["date_ko"] = entry_date_raw
             entry["body_html"] = _escape_with_br(str(entry["body"] or ""))
+            comments = comments_by_entry.get(entry["id"], [])
+            for comment in comments:
+                comment["body_html"] = _escape_with_br(str(comment.get("body") or ""))
+                comment["created_at_display"] = _format_comment_ts(str(comment.get("created_at") or ""))
+            entry["comments"] = comments
         return render_template(
             "diary.html",
             entries=entries,
@@ -379,6 +399,32 @@ def create_app() -> Flask:
         add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 저장했습니다.", "ok")
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.post("/diary/<int:entry_id>/comments")
+    def diary_comment_post(entry_id: int):
+        _require_login()
+        body = (request.form.get("comment_body") or "").strip()
+        if not body:
+            flash("댓글 내용이 비어있습니다.", "error")
+            return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+        if not get_diary_entry(DB_PATH, entry_id):
+            flash("일기를 찾지 못했습니다.", "error")
+            return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+        add_diary_comment(DB_PATH, entry_id, body)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        flash("댓글을 추가했습니다.", "ok")
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.post("/diary/comments/<int:comment_id>/delete")
+    def diary_comment_delete(comment_id: int):
+        _require_login()
+        deleted = delete_diary_comment(DB_PATH, comment_id)
+        if deleted:
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash("댓글을 삭제했습니다.", "ok")
+        else:
+            flash("댓글을 찾지 못했습니다.", "error")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
     @app.post("/diary/<int:entry_id>/edit")
@@ -437,6 +483,9 @@ def create_app() -> Flask:
             end_date=end_date.isoformat() if end_date else None,
             order="asc",
         )
+        comments_by_entry = fetch_diary_comments(DB_PATH, [entry["id"] for entry in entries])
+        for entry in entries:
+            entry["comments"] = comments_by_entry.get(entry["id"], [])
         if fmt == "csv":
             content = serialize_diary_csv(entries)
             content_type = "text/csv; charset=utf-8"

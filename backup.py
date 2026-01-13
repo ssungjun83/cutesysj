@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 from storage import (
+    fetch_diary_comments,
     fetch_diary_entries,
     fetch_messages,
     serialize_diary_csv,
@@ -182,6 +183,9 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
     try:
         messages = fetch_messages(db_path, limit=None, before_dt=None, order="asc")
         diary_entries = fetch_diary_entries(db_path, limit=None, order="asc")
+        comments_by_entry = fetch_diary_comments(db_path, [entry["id"] for entry in diary_entries])
+        for entry in diary_entries:
+            entry["comments"] = comments_by_entry.get(entry["id"], [])
         exported = {
             "plain": _export_plain(messages),
             "kakao": _export_kakao(messages),
