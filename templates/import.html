@@ -12,8 +12,9 @@
         <h1 class="title">대화 가져오기</h1>
         <a class="link" href="{{ url_for('index') }}">← 대화로</a>
       </div>
-      <p class="sub">카카오톡 대화 저장(.txt)을 올리면 DB에 누적 저장되며, 날짜+메시지 내용이 같으면 자동으로 중복 제외합니다.</p>
-      <p class="sub">이 프로젝트 설정에서는 가져오기 시 발신자 이름이 자동으로 정리됩니다. (이성준은 유지, 그 외는 모두 “귀여운소연이”로 통일)</p>
+      <p class="sub">내보내기에서 받은 TXT/CSV/카카오 TXT를 다시 가져올 수 있습니다.</p>
+      <p class="sub">카카오톡 원문(.txt)을 올리면 DB에 누적 저장되며, 날짜+메시지 내용이 같으면 자동으로 중복 제외합니다.</p>
+      <p class="sub">카카오 원문을 가져올 때는 발신자 이름이 자동으로 정리됩니다. (이성준은 유지, 그 외는 모두 “귀여운소연이”로 통일)</p>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -26,8 +27,16 @@
       {% endwith %}
 
       <form method="post" action="{{ url_for('admin_import_post') }}" enctype="multipart/form-data">
-        <label class="label">파일 업로드 (.txt)</label>
-        <input class="input" type="file" name="file" accept=".txt,text/plain" />
+        <label class="label">가져오기 종류</label>
+        <select class="select" name="import_kind">
+          <option value="auto">자동 판별</option>
+          <option value="chat">대화</option>
+          <option value="diary">일기</option>
+          <option value="memories">사진</option>
+        </select>
+
+        <label class="label">파일 업로드 (.txt / .csv)</label>
+        <input class="input" type="file" name="file" accept=".txt,.csv,text/plain,text/csv" />
 
         <div class="sep">또는</div>
 

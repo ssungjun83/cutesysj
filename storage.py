@@ -296,6 +296,47 @@ def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> in
         return int(cur.lastrowid)
 
 
+def upsert_diary_entry(
+    db_path: Path,
+    entry_date: str,
+    title: str,
+    body: str,
+    created_at: str | None = None,
+) -> tuple[int, bool] | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT id
+            FROM diary_entries
+            WHERE entry_date = ? AND title = ? AND body = ?
+            LIMIT 1
+            """,
+            (entry_date, title, body),
+        ).fetchone()
+        if row:
+            return int(row["id"]), False
+        if created_at:
+            cur = conn.execute(
+                """
+                INSERT INTO diary_entries (entry_date, title, body, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (entry_date, title, body, created_at),
+            )
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO diary_entries (entry_date, title, body)
+                VALUES (?, ?, ?)
+                """,
+                (entry_date, title, body),
+            )
+        conn.commit()
+        return int(cur.lastrowid), True
+
+
 def fetch_diary_entries(
     db_path: Path,
     *,
@@ -390,6 +431,57 @@ def add_diary_comment(db_path: Path, entry_id: int, body: str) -> int:
         )
         conn.commit()
         return int(cur.lastrowid)
+
+
+def upsert_diary_comment(
+    db_path: Path,
+    entry_id: int,
+    body: str,
+    created_at: str | None = None,
+) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        if created_at:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM diary_comments
+                WHERE entry_id = ? AND body = ? AND created_at = ?
+                LIMIT 1
+                """,
+                (int(entry_id), body, created_at),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM diary_comments
+                WHERE entry_id = ? AND body = ?
+                LIMIT 1
+                """,
+                (int(entry_id), body),
+            ).fetchone()
+        if row:
+            return False
+        if created_at:
+            conn.execute(
+                """
+                INSERT INTO diary_comments (entry_id, body, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (int(entry_id), body, created_at),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO diary_comments (entry_id, body)
+                VALUES (?, ?)
+                """,
+                (int(entry_id), body),
+            )
+        conn.commit()
+        return True
 
 
 def fetch_diary_comments(db_path: Path, entry_ids: list[int]) -> dict[int, list[dict]]:
@@ -540,6 +632,68 @@ def add_memory_photo(
         )
         conn.commit()
         return cur.rowcount == 1
+
+
+def upsert_memory_photo_full(
+    db_path: Path,
+    *,
+    drive_file_id: str,
+    file_name: str,
+    mime_type: str | None = None,
+    caption: str | None = None,
+    album: str | None = None,
+    tags: str | None = None,
+    taken_date: str | None = None,
+    created_at: str | None = None,
+    updated_at: str | None = None,
+) -> bool:
+    init_db(db_path)
+    tags_clean = _normalize_tags(tags or "")
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO memories_photos
+            (drive_file_id, file_name, mime_type, caption, album, tags, taken_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))
+            """,
+            (
+                drive_file_id,
+                file_name,
+                mime_type,
+                caption or "",
+                album or "",
+                tags_clean,
+                taken_date,
+                created_at,
+                updated_at,
+            ),
+        )
+        inserted = cur.rowcount == 1
+        conn.execute(
+            """
+            UPDATE memories_photos
+            SET file_name = ?,
+                mime_type = ?,
+                caption = ?,
+                album = ?,
+                tags = ?,
+                taken_date = ?,
+                updated_at = COALESCE(?, CURRENT_TIMESTAMP)
+            WHERE drive_file_id = ?
+            """,
+            (
+                file_name,
+                mime_type,
+                caption or "",
+                album or "",
+                tags_clean,
+                taken_date,
+                updated_at,
+                drive_file_id,
+            ),
+        )
+        conn.commit()
+    return inserted
 
 
 def upsert_memory_photo(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 from pathlib import Path
+import csv
 import secrets
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
@@ -33,6 +34,22 @@ from drive_client import (
     list_drive_images,
     upload_drive_file,
 )
+from export_utils import (
+    build_export_header,
+    parse_chat_csv,
+    parse_chat_plain,
+    parse_diary_csv,
+    parse_diary_markdown,
+    parse_diary_plain,
+    parse_memories_csv,
+    parse_memories_txt,
+    serialize_chat_csv,
+    serialize_chat_kakao,
+    serialize_chat_plain,
+    serialize_memories_csv,
+    serialize_memories_txt,
+    strip_export_header,
+)
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
     add_diary_entry,
@@ -46,6 +63,7 @@ from storage import (
     fetch_memory_photos,
     fetch_senders,
     get_diary_entry,
+    import_messages,
     import_messages_canonicalized,
     get_memory_photo,
     normalize_db_senders_and_dedup,
@@ -54,10 +72,13 @@ from storage import (
     serialize_diary_markdown,
     serialize_diary_plain,
     update_diary_entry,
+    upsert_diary_comment,
+    upsert_diary_entry,
     add_memory_photo,
     update_memory_photo,
     delete_memory_photo,
     upsert_memory_photo,
+    upsert_memory_photo_full,
 )
 
 
@@ -185,6 +206,51 @@ def _split_tags(tags: str) -> list[str]:
     return [part for part in parts if part]
 
 
+def _csv_header_fields(text: str) -> set[str]:
+    _meta, body = strip_export_header(text)
+    for line in body.splitlines():
+        if line.strip():
+            first_line = line
+            break
+    else:
+        return set()
+    try:
+        row = next(csv.reader([first_line]))
+    except Exception:
+        return set()
+    return {field.strip() for field in row if field}
+
+
+def _detect_import_kind(text: str, requested: str | None) -> str:
+    kind = (requested or "auto").strip().lower()
+    if kind and kind != "auto":
+        return kind
+
+    meta, _body = strip_export_header(text)
+    meta_type = (meta.get("type") or "").strip().lower()
+    if meta_type in ("chat", "diary", "memories"):
+        return meta_type
+
+    fields = _csv_header_fields(text)
+    if fields:
+        if {"dt", "sender", "text"} <= fields:
+            return "chat"
+        if {"entry_date", "title", "body"} <= fields:
+            return "diary"
+        if "drive_file_id" in fields:
+            return "memories"
+
+    if parse_chat_plain(text):
+        return "chat"
+    if parse_kakao_talk_txt(text):
+        return "chat"
+    if parse_diary_plain(text) or parse_diary_markdown(text):
+        return "diary"
+    if parse_memories_txt(text):
+        return "memories"
+    return "unknown"
+
+
 def create_app() -> Flask:
     load_dotenv(BASE_DIR / ".env", interpolate=False, encoding="utf-8-sig")
 
@@ -212,6 +278,12 @@ def create_app() -> Flask:
     app.config["CHAT_ME_NAME"] = os.getenv("CHAT_APP_ME", "").strip() or canonical_me
     app.config["CHAT_PASSWORD_HASH"] = password_hash
     app.config["AUTH_DISABLED"] = auth_disabled
+
+    def _download_response(content: str, content_type: str, filename: str):
+        resp = make_response(content)
+        resp.headers["Content-Type"] = content_type
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
 
     @app.before_request
     def _auth_flag_to_session():
@@ -487,7 +559,7 @@ def create_app() -> Flask:
         for entry in entries:
             entry["comments"] = comments_by_entry.get(entry["id"], [])
         if fmt == "csv":
-            content = serialize_diary_csv(entries)
+            content = build_export_header("diary", "csv") + serialize_diary_csv(entries)
             content_type = "text/csv; charset=utf-8"
             ext = "csv"
         elif fmt == "md":
@@ -495,16 +567,13 @@ def create_app() -> Flask:
             content_type = "text/markdown; charset=utf-8"
             ext = "md"
         else:
-            content = serialize_diary_plain(entries)
+            content = build_export_header("diary", "txt") + serialize_diary_plain(entries)
             content_type = "text/plain; charset=utf-8"
             ext = "txt"
 
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"diary_export_{stamp}.{ext}"
-        resp = make_response(content)
-        resp.headers["Content-Type"] = content_type
-        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
+        return _download_response(content, content_type, filename)
 
     @app.get("/memories")
     def memories():
@@ -723,6 +792,64 @@ def create_app() -> Flask:
             session.pop("me_name", None)
         return redirect(url_for("index"))
 
+    @app.get("/admin/export")
+    def admin_export():
+        _require_login()
+        return render_template("export.html")
+
+    @app.get("/admin/export/chat")
+    def admin_export_chat():
+        _require_login()
+        fmt = (request.args.get("format") or "txt").strip().lower()
+        q = (request.args.get("q") or "").strip()
+        if q:
+            messages = search_messages(DB_PATH, q, limit=5000)
+        else:
+            messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
+
+        if fmt == "kakao":
+            content = serialize_chat_kakao(messages, include_header=True)
+            content_type = "text/plain; charset=utf-8"
+            ext = "txt"
+        elif fmt == "csv":
+            content = serialize_chat_csv(messages, include_header=True)
+            content_type = "text/csv; charset=utf-8"
+            ext = "csv"
+        else:
+            content = serialize_chat_plain(messages, include_header=True)
+            content_type = "text/plain; charset=utf-8"
+            ext = "txt"
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"chat_export_{stamp}.{ext}"
+        return _download_response(content, content_type, filename)
+
+    @app.get("/admin/export/memories")
+    def admin_export_memories():
+        _require_login()
+        fmt = (request.args.get("format") or "csv").strip().lower()
+        photos = fetch_memory_photos(
+            DB_PATH,
+            q=None,
+            album=None,
+            tag=None,
+            start_date=None,
+            end_date=None,
+            limit=None,
+            order="asc",
+        )
+        if fmt == "txt":
+            content = serialize_memories_txt(photos, include_header=True)
+            content_type = "text/plain; charset=utf-8"
+            ext = "txt"
+        else:
+            content = serialize_memories_csv(photos, include_header=True)
+            content_type = "text/csv; charset=utf-8"
+            ext = "csv"
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"memories_export_{stamp}.{ext}"
+        return _download_response(content, content_type, filename)
+
     @app.get("/admin/import")
     def admin_import():
         _require_login()
@@ -747,24 +874,151 @@ def create_app() -> Flask:
             flash("가져올 내용이 비어있습니다.", "error")
             return redirect(url_for("admin_import"))
 
-        msgs = parse_kakao_talk_txt(text)
-        if not msgs:
-            flash("메시지를 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
-            return redirect(url_for("admin_import"))
+        meta, body = strip_export_header(text)
+        import_kind = _detect_import_kind(text, request.form.get("import_kind"))
+        format_hint = (meta.get("format") or "").strip().lower()
 
-        result = import_messages_canonicalized(
-            DB_PATH,
-            msgs,
-            source=source_label,
-            me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
-            other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
-        )
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
-        flash(
-            f"가져오기 완료: {result['inserted']}개 추가, {result['skipped']}개 중복 제외 (총 {result['total']}개 파싱)",
-            "ok",
-        )
-        return redirect(url_for("index"))
+        if import_kind == "chat":
+            msgs = []
+            if format_hint == "csv":
+                msgs = parse_chat_csv(text)
+            elif format_hint == "txt":
+                msgs = parse_chat_plain(text)
+            elif format_hint == "kakao":
+                msgs = parse_kakao_talk_txt(body)
+            else:
+                msgs = parse_chat_csv(text)
+                if not msgs:
+                    msgs = parse_chat_plain(text)
+                if not msgs:
+                    msgs = parse_kakao_talk_txt(body)
+
+            if not msgs:
+                flash("메시지를 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
+                return redirect(url_for("admin_import"))
+
+            if meta.get("type") == "chat":
+                result = import_messages(DB_PATH, msgs, source=source_label)
+            else:
+                result = import_messages_canonicalized(
+                    DB_PATH,
+                    msgs,
+                    source=source_label,
+                    me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
+                    other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
+                )
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash(
+                f"가져오기 완료: {result['inserted']}개 추가, {result['skipped']}개 중복 제외 (총 {result['total']}개 파싱)",
+                "ok",
+            )
+            return redirect(url_for("index"))
+
+        if import_kind == "diary":
+            entries = []
+            if format_hint == "csv":
+                entries = parse_diary_csv(text)
+            elif format_hint == "txt":
+                entries = parse_diary_plain(text)
+            elif format_hint == "md":
+                entries = parse_diary_markdown(text)
+            else:
+                entries = parse_diary_csv(text)
+                if not entries:
+                    entries = parse_diary_plain(text)
+                if not entries:
+                    entries = parse_diary_markdown(text)
+
+            if not entries:
+                flash("일기 내용을 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
+                return redirect(url_for("admin_import"))
+
+            inserted_entries = 0
+            skipped_entries = 0
+            inserted_comments = 0
+            skipped_comments = 0
+            for entry in entries:
+                upserted = upsert_diary_entry(
+                    DB_PATH,
+                    entry.entry_date,
+                    entry.title,
+                    entry.body,
+                    created_at=entry.created_at,
+                )
+                if not upserted:
+                    skipped_entries += 1
+                    continue
+                entry_id, was_inserted = upserted
+                if was_inserted:
+                    inserted_entries += 1
+                else:
+                    skipped_entries += 1
+
+                for comment in entry.comments:
+                    if not comment.body:
+                        continue
+                    added = upsert_diary_comment(
+                        DB_PATH,
+                        entry_id,
+                        comment.body,
+                        created_at=comment.created_at,
+                    )
+                    if added:
+                        inserted_comments += 1
+                    else:
+                        skipped_comments += 1
+
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash(
+                "일기 가져오기 완료: "
+                f"{inserted_entries}개 추가, {skipped_entries}개 중복 제외, "
+                f"댓글 {inserted_comments}개 추가",
+                "ok",
+            )
+            return redirect(url_for("diary"))
+
+        if import_kind == "memories":
+            rows = []
+            if format_hint == "csv":
+                rows = parse_memories_csv(text)
+            elif format_hint == "txt":
+                rows = parse_memories_txt(text)
+            else:
+                rows = parse_memories_csv(text)
+                if not rows:
+                    rows = parse_memories_txt(text)
+
+            if not rows:
+                flash("사진 데이터를 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
+                return redirect(url_for("admin_import"))
+
+            inserted = 0
+            for row in rows:
+                if not row.get("drive_file_id"):
+                    continue
+                if not row.get("file_name"):
+                    row["file_name"] = row.get("drive_file_id")
+                added = upsert_memory_photo_full(
+                    DB_PATH,
+                    drive_file_id=str(row.get("drive_file_id")),
+                    file_name=str(row.get("file_name") or ""),
+                    mime_type=str(row.get("mime_type") or ""),
+                    caption=str(row.get("caption") or ""),
+                    album=str(row.get("album") or ""),
+                    tags=str(row.get("tags") or ""),
+                    taken_date=str(row.get("taken_date") or ""),
+                    created_at=row.get("created_at"),
+                    updated_at=row.get("updated_at"),
+                )
+                if added:
+                    inserted += 1
+
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash(f"사진 가져오기 완료: {inserted}개 추가", "ok")
+            return redirect(url_for("memories"))
+
+        flash("가져올 데이터를 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
+        return redirect(url_for("admin_import"))
 
     @app.post("/admin/normalize")
     def admin_normalize():
