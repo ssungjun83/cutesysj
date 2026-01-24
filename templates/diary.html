@@ -33,12 +33,6 @@
       {% endif %}
     {% endwith %}
 
-    {% if not drive_ready %}
-      <div class="diary-alert">
-        <strong>Drive 설정 필요:</strong> {{ drive_hint }}
-      </div>
-    {% endif %}
-
     <main class="diary">
       <section class="diary-editor">
         <div class="diary-editor-head">
@@ -47,7 +41,7 @@
             <span class="diary-editing">수정 중</span>
           {% endif %}
         </div>
-        <form method="post" action="{{ url_for('diary_edit_post', entry_id=editing.id) if editing else url_for('diary_post') }}" enctype="multipart/form-data">
+        <form method="post" action="{{ url_for('diary_edit_post', entry_id=editing.id) if editing else url_for('diary_post') }}">
           <input type="hidden" name="q" value="{{ search_query or '' }}" />
           <input type="hidden" name="start_date" value="{{ start_date or '' }}" />
           <input type="hidden" name="end_date" value="{{ end_date or '' }}" />
@@ -60,10 +54,6 @@
 
           <label class="label">내용</label>
           <textarea class="textarea" name="body" rows="8" placeholder="오늘의 기록을 남겨보세요.">{{ editing.body if editing else '' }}</textarea>
-
-          <label class="label">사진</label>
-          <input id="diary-photo-input" class="input" type="file" name="photos" accept="image/*" multiple {% if not drive_ready %}disabled{% endif %} />
-          <div id="diary-photo-help" class="diary-photo-help">Drive에 업로드됩니다. (붙여넣기: Ctrl+V)</div>
 
           <div class="diary-editor-actions">
             <button class="btn" type="submit">{{ "수정 저장" if editing else "저장" }}</button>
@@ -178,64 +168,5 @@
       </section>
     </main>
     {% include "_auth_guard.html" %}
-    <script>
-      (function () {
-        const input = document.getElementById("diary-photo-input");
-        const help = document.getElementById("diary-photo-help");
-        const editorForm = document.querySelector(".diary-editor form");
-        if (!input || !editorForm || input.disabled) {
-          return;
-        }
-        if (help) {
-          help.dataset.defaultText = help.textContent || "";
-        }
-
-        const updateHelp = () => {
-          if (!help) {
-            return;
-          }
-          const count = input.files ? input.files.length : 0;
-          if (!count) {
-            help.textContent = help.dataset.defaultText || help.textContent;
-            return;
-          }
-          help.textContent = `사진 ${count}장 선택됨. (붙여넣기: Ctrl+V)`;
-        };
-
-        const appendFiles = (files) => {
-          if (!files.length) {
-            return;
-          }
-          const dt = new DataTransfer();
-          if (input.files) {
-            Array.from(input.files).forEach((file) => dt.items.add(file));
-          }
-          files.forEach((file) => dt.items.add(file));
-          input.files = dt.files;
-          updateHelp();
-        };
-
-        input.addEventListener("change", updateHelp);
-        editorForm.addEventListener("paste", (event) => {
-          if (!event.clipboardData || input.disabled) {
-            return;
-          }
-          const items = Array.from(event.clipboardData.items || []);
-          const images = [];
-          for (const item of items) {
-            if (item.kind !== "file") {
-              continue;
-            }
-            const file = item.getAsFile();
-            if (file && file.type.startsWith("image/")) {
-              images.push(file);
-            }
-          }
-          if (images.length) {
-            appendFiles(images);
-          }
-        });
-      })();
-    </script>
   </body>
 </html>
