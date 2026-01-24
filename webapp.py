@@ -149,6 +149,10 @@ def _format_ko_date(value: date) -> str:
     return f"{value.year}년 {value.month}월 {value.day}일 {weekday_ko}"
 
 
+def _today_seoul_date() -> date:
+    return datetime.now(SEOUL_TZ).date()
+
+
 def _parse_iso_date(value: str) -> date | None:
     value = (value or "").strip()
     if not value:
@@ -483,7 +487,7 @@ def create_app() -> Flask:
             "diary.html",
             entries=entries,
             editing=editing,
-            today=date.today().isoformat(),
+            today=_today_seoul_date().isoformat(),
             search_query=q,
             start_date=start_date.isoformat() if start_date else start_date_raw,
             end_date=end_date.isoformat() if end_date else end_date_raw,
@@ -501,7 +505,7 @@ def create_app() -> Flask:
             return redirect(url_for("diary"))
 
         if not entry_date_raw:
-            entry_date_raw = date.today().isoformat()
+            entry_date_raw = _today_seoul_date().isoformat()
         entry_date = _parse_iso_date(entry_date_raw)
         if not entry_date:
             flash("날짜 형식이 올바르지 않습니다.", "error")
@@ -553,7 +557,7 @@ def create_app() -> Flask:
             return redirect(url_for("diary", edit=entry_id, **_diary_redirect_args(request.form)))
 
         if not entry_date_raw:
-            entry_date_raw = date.today().isoformat()
+            entry_date_raw = _today_seoul_date().isoformat()
         entry_date = _parse_iso_date(entry_date_raw)
         if not entry_date:
             flash("날짜 형식이 올바르지 않습니다.", "error")
