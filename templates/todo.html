@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>할거</title>
+    <title>함께할일</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body class="chat-page todo-page">
     <header class="topbar">
-      <div class="topbar-title">할거</div>
+      <div class="topbar-title">함께할일</div>
       <nav class="topbar-actions">
         <div class="nav-tabs">
           <a class="tab" href="{{ url_for('diary') }}">일기</a>
           <a class="tab" href="{{ url_for('index', view='chat') }}">대화</a>
-          <a class="tab is-active" href="{{ url_for('todo') }}">할거</a>
+          <a class="tab is-active" href="{{ url_for('todo') }}">함께할일</a>
           <a class="tab" href="{{ url_for('memories') }}">추억</a>
         </div>
         <div class="nav-links">
