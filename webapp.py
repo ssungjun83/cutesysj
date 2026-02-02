@@ -59,6 +59,7 @@ from storage import (
     delete_diary_comment,
     delete_diary_photo,
     add_todo_item,
+    check_todo_daily_item,
     complete_todo_item,
     fetch_diary_comments,
     fetch_diary_entries,
@@ -668,26 +669,42 @@ def create_app() -> Flask:
     @app.get("/todo")
     def todo():
         _require_login()
-        pending, done = fetch_todo_items(DB_PATH)
-        for item in pending:
+        daily, active_pending, active_done = fetch_todo_items(DB_PATH)
+        for item in daily:
             item["body_html"] = _escape_with_br(str(item.get("body") or ""))
-        for item in done:
+            item["done_today"] = bool(str(item.get("today_completed_at") or "").strip())
+            item["today_completed_at_display"] = _format_comment_ts(str(item.get("today_completed_at") or ""))
+        for item in active_pending:
+            item["body_html"] = _escape_with_br(str(item.get("body") or ""))
+        for item in active_done:
             item["body_html"] = _escape_with_br(str(item.get("body") or ""))
             item["completed_at_display"] = _format_comment_ts(str(item.get("completed_at") or ""))
         return render_template(
             "todo.html",
-            pending=pending,
-            done=done,
+            daily=daily,
+            active_pending=active_pending,
+            active_done=active_done,
         )
 
-    @app.post("/todo")
-    def todo_post():
+    @app.post("/todo/daily")
+    def todo_daily_post():
         _require_login()
         body = (request.form.get("body") or "").strip()
         if not body:
             flash("내용이 비어있습니다.", "error")
             return redirect(url_for("todo"))
-        add_todo_item(DB_PATH, body)
+        add_todo_item(DB_PATH, body, kind="daily")
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        return redirect(url_for("todo"))
+
+    @app.post("/todo/active")
+    def todo_active_post():
+        _require_login()
+        body = (request.form.get("body") or "").strip()
+        if not body:
+            flash("내용이 비어있습니다.", "error")
+            return redirect(url_for("todo"))
+        add_todo_item(DB_PATH, body, kind="active")
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
@@ -695,6 +712,13 @@ def create_app() -> Flask:
     def todo_complete(item_id: int):
         _require_login()
         complete_todo_item(DB_PATH, item_id)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        return redirect(url_for("todo"))
+
+    @app.post("/todo/daily/<int:item_id>/check")
+    def todo_daily_check(item_id: int):
+        _require_login()
+        check_todo_daily_item(DB_PATH, item_id)
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 

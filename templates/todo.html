@@ -36,17 +36,47 @@
 
     <main class="todo">
       <section class="todo-card">
-        <h2 class="section-title">소연 ♡ 성준</h2>
-        <form class="todo-form" method="post" action="{{ url_for('todo_post') }}">
-          <label class="label">할 일</label>
+        <h2 class="section-title">매일의 하트루틴</h2>
+        <form class="todo-form" method="post" action="{{ url_for('todo_daily_post') }}">
+          <label class="label">매일 함께할 일</label>
           <div class="todo-form-row">
-            <input class="input" type="text" name="body" placeholder="앞으로 할 일을 적어주세요." />
+            <input class="input" type="text" name="body" placeholder="매일 반복할 사랑 루틴을 적어주세요." />
             <button class="btn btn-secondary" type="submit">추가</button>
           </div>
         </form>
         <div class="todo-list">
-          {% if pending %}
-            {% for item in pending %}
+          {% if daily %}
+            {% for item in daily %}
+              <form class="todo-item {% if item.done_today %}done{% endif %}" method="post" action="{{ url_for('todo_daily_check', item_id=item.id) }}">
+                <label class="todo-check">
+                  <input type="checkbox" {% if item.done_today %}checked disabled{% endif %} onchange="this.form.submit()" />
+                  <span class="todo-text">{{ item.body_html }}</span>
+                </label>
+                {% if item.done_today %}
+                  <div class="todo-time">오늘 완료 {{ item.today_completed_at_display }}</div>
+                {% else %}
+                  <div class="todo-time">오늘도 함께 해요</div>
+                {% endif %}
+              </form>
+            {% endfor %}
+          {% else %}
+            <div class="todo-empty">아직 등록된 매일 루틴이 없습니다.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="todo-card">
+        <h2 class="section-title">설레는 오늘미션</h2>
+        <form class="todo-form" method="post" action="{{ url_for('todo_active_post') }}">
+          <label class="label">한 번 완료할 일</label>
+          <div class="todo-form-row">
+            <input class="input" type="text" name="body" placeholder="지금 진행할 미션을 적어주세요." />
+            <button class="btn btn-secondary" type="submit">추가</button>
+          </div>
+        </form>
+        <div class="todo-list">
+          {% if active_pending %}
+            {% for item in active_pending %}
               <form class="todo-item" method="post" action="{{ url_for('todo_complete', item_id=item.id) }}">
                 <label class="todo-check">
                   <input type="checkbox" onchange="this.form.submit()" />
@@ -55,23 +85,21 @@
               </form>
             {% endfor %}
           {% else %}
-            <div class="todo-empty">아직 적어둔 할 일이 없습니다.</div>
+            <div class="todo-empty">진행 중인 미션이 없습니다.</div>
           {% endif %}
         </div>
-      </section>
 
-      <section class="todo-card">
-        <h2 class="section-title">사랑해</h2>
+        <h3 class="todo-subtitle">완료한 우리 순간</h3>
         <div class="todo-list">
-          {% if done %}
-            {% for item in done %}
+          {% if active_done %}
+            {% for item in active_done %}
               <div class="todo-item done">
                 <div class="todo-text">{{ item.body_html }}</div>
                 <div class="todo-time">{{ item.completed_at_display }}</div>
               </div>
             {% endfor %}
           {% else %}
-            <div class="todo-empty">완료된 일이 아직 없습니다.</div>
+            <div class="todo-empty">완료한 미션이 아직 없습니다.</div>
           {% endif %}
         </div>
       </section>

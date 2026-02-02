@@ -60,11 +60,23 @@ CREATE INDEX IF NOT EXISTS idx_diary_photos_entry ON diary_photos(entry_id);
 CREATE TABLE IF NOT EXISTS todo_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   body TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   completed_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_todo_items_completed ON todo_items(completed_at);
+
+CREATE TABLE IF NOT EXISTS todo_daily_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  check_date TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  UNIQUE (item_id, check_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_todo_daily_checks_item ON todo_daily_checks(item_id);
+CREATE INDEX IF NOT EXISTS idx_todo_daily_checks_date ON todo_daily_checks(check_date);
 
 CREATE TABLE IF NOT EXISTS memories_photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,6 +198,11 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        # Backward-compatible migration for existing DBs created before todo kind was added.
+        try:
+            conn.execute("ALTER TABLE todo_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'active'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -631,16 +648,17 @@ def delete_diary_comment(db_path: Path, comment_id: int) -> bool:
         return cur.rowcount == 1
 
 
-def add_todo_item(db_path: Path, body: str) -> int:
+def add_todo_item(db_path: Path, body: str, *, kind: str = "active") -> int:
     init_db(db_path)
     created_at = _now_seoul_timestamp()
+    kind_value = "daily" if kind == "daily" else "active"
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """
-            INSERT INTO todo_items (body, created_at)
-            VALUES (?, ?)
+            INSERT INTO todo_items (body, kind, created_at)
+            VALUES (?, ?, ?)
             """,
-            (body, created_at),
+            (body, kind_value, created_at),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -654,7 +672,7 @@ def complete_todo_item(db_path: Path, item_id: int, completed_at: str | None = N
             """
             UPDATE todo_items
             SET completed_at = ?
-            WHERE id = ? AND completed_at IS NULL
+            WHERE id = ? AND kind = 'active' AND completed_at IS NULL
             """,
             (completed_value, int(item_id)),
         )
@@ -662,27 +680,78 @@ def complete_todo_item(db_path: Path, item_id: int, completed_at: str | None = N
         return cur.rowcount == 1
 
 
-def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict]]:
+def check_todo_daily_item(
+    db_path: Path,
+    item_id: int,
+    *,
+    check_date: str | None = None,
+    completed_at: str | None = None,
+) -> bool:
     init_db(db_path)
+    check_date_value = check_date or datetime.now(SEOUL_TZ).date().isoformat()
+    completed_value = completed_at or _now_seoul_timestamp()
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM todo_items
+            WHERE id = ? AND kind = 'daily'
+            LIMIT 1
+            """,
+            (int(item_id),),
+        ).fetchone()
+        if not row:
+            return False
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO todo_daily_checks (item_id, check_date, completed_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(item_id), check_date_value, completed_value),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict], list[dict]]:
+    init_db(db_path)
+    today = datetime.now(SEOUL_TZ).date().isoformat()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        daily_rows = conn.execute(
+            """
+            SELECT t.id,
+                   t.body,
+                   t.kind,
+                   t.created_at,
+                   t.completed_at,
+                   dc.completed_at AS today_completed_at
+            FROM todo_items t
+            LEFT JOIN todo_daily_checks dc
+              ON dc.item_id = t.id
+             AND dc.check_date = ?
+            WHERE t.kind = 'daily'
+            ORDER BY t.created_at ASC, t.id ASC
+            """,
+            (today,),
+        ).fetchall()
         pending_rows = conn.execute(
             """
-            SELECT id, body, created_at, completed_at
+            SELECT id, body, kind, created_at, completed_at
             FROM todo_items
-            WHERE completed_at IS NULL
+            WHERE kind = 'active' AND completed_at IS NULL
             ORDER BY created_at ASC, id ASC
             """
         ).fetchall()
         done_rows = conn.execute(
             """
-            SELECT id, body, created_at, completed_at
+            SELECT id, body, kind, created_at, completed_at
             FROM todo_items
-            WHERE completed_at IS NOT NULL
+            WHERE kind = 'active' AND completed_at IS NOT NULL
             ORDER BY completed_at DESC, id DESC
             """
         ).fetchall()
-    return ([dict(r) for r in pending_rows], [dict(r) for r in done_rows])
+    return ([dict(r) for r in daily_rows], [dict(r) for r in pending_rows], [dict(r) for r in done_rows])
 
 
 def add_diary_photo(
