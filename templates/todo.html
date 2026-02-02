@@ -47,9 +47,25 @@
         <div class="todo-list">
           {% if daily %}
             {% for item in daily %}
-              <div class="todo-item">
-                <div class="todo-text">{{ item.body_html }}</div>
-              </div>
+              {% if editing and editing.id == item.id %}
+                <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
+                  <input class="input" type="text" name="body" value="{{ editing.body }}" />
+                  <div class="todo-actions">
+                    <button class="btn btn-secondary" type="submit">저장</button>
+                    <a class="link" href="{{ url_for('todo') }}">취소</a>
+                  </div>
+                </form>
+              {% else %}
+                <div class="todo-item">
+                  <div class="todo-text">{{ item.body_html }}</div>
+                  <div class="todo-actions">
+                    <a class="link" href="{{ url_for('todo', edit=item.id) }}">수정</a>
+                    <form method="post" action="{{ url_for('todo_delete', item_id=item.id) }}">
+                      <button class="link-button" type="submit" onclick="return confirm('이 항목을 삭제할까요?');">삭제</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
             {% endfor %}
           {% else %}
             <div class="todo-empty">아직 등록된 매일 루틴이 없습니다.</div>
@@ -69,12 +85,30 @@
         <div class="todo-list">
           {% if active_pending %}
             {% for item in active_pending %}
-              <form class="todo-item" method="post" action="{{ url_for('todo_complete', item_id=item.id) }}">
-                <label class="todo-check">
-                  <input type="checkbox" onchange="this.form.submit()" />
-                  <span class="todo-text">{{ item.body_html }}</span>
-                </label>
-              </form>
+              {% if editing and editing.id == item.id %}
+                <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
+                  <input class="input" type="text" name="body" value="{{ editing.body }}" />
+                  <div class="todo-actions">
+                    <button class="btn btn-secondary" type="submit">저장</button>
+                    <a class="link" href="{{ url_for('todo') }}">취소</a>
+                  </div>
+                </form>
+              {% else %}
+                <div class="todo-item">
+                  <form method="post" action="{{ url_for('todo_complete', item_id=item.id) }}">
+                    <label class="todo-check">
+                      <input type="checkbox" onchange="this.form.submit()" />
+                      <span class="todo-text">{{ item.body_html }}</span>
+                    </label>
+                  </form>
+                  <div class="todo-actions">
+                    <a class="link" href="{{ url_for('todo', edit=item.id) }}">수정</a>
+                    <form method="post" action="{{ url_for('todo_delete', item_id=item.id) }}">
+                      <button class="link-button" type="submit" onclick="return confirm('이 항목을 삭제할까요?');">삭제</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
             {% endfor %}
           {% else %}
             <div class="todo-empty">진행 중인 미션이 없습니다.</div>
@@ -85,10 +119,26 @@
         <div class="todo-list">
           {% if active_done %}
             {% for item in active_done %}
-              <div class="todo-item done">
-                <div class="todo-text">{{ item.body_html }}</div>
-                <div class="todo-time">{{ item.completed_at_display }}</div>
-              </div>
+              {% if editing and editing.id == item.id %}
+                <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
+                  <input class="input" type="text" name="body" value="{{ editing.body }}" />
+                  <div class="todo-actions">
+                    <button class="btn btn-secondary" type="submit">저장</button>
+                    <a class="link" href="{{ url_for('todo') }}">취소</a>
+                  </div>
+                </form>
+              {% else %}
+                <div class="todo-item done">
+                  <div class="todo-text">{{ item.body_html }}</div>
+                  <div class="todo-actions">
+                    <div class="todo-time">{{ item.completed_at_display }}</div>
+                    <a class="link" href="{{ url_for('todo', edit=item.id) }}">수정</a>
+                    <form method="post" action="{{ url_for('todo_delete', item_id=item.id) }}">
+                      <button class="link-button" type="submit" onclick="return confirm('이 항목을 삭제할까요?');">삭제</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
             {% endfor %}
           {% else %}
             <div class="todo-empty">완료한 미션이 아직 없습니다.</div>

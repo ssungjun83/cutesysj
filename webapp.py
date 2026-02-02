@@ -61,6 +61,7 @@ from storage import (
     add_todo_item,
     check_todo_daily_item,
     complete_todo_item,
+    delete_todo_item,
     fetch_diary_comments,
     fetch_diary_entries,
     fetch_diary_photos,
@@ -74,6 +75,7 @@ from storage import (
     import_messages,
     import_messages_canonicalized,
     get_memory_photo,
+    get_todo_item,
     normalize_db_senders_and_dedup,
     search_messages,
     serialize_diary_csv,
@@ -85,6 +87,7 @@ from storage import (
     migrate_diary_timezone_seoul,
     add_memory_photo,
     update_memory_photo,
+    update_todo_item,
     delete_memory_photo,
     upsert_memory_photo,
     upsert_memory_photo_full,
@@ -669,6 +672,15 @@ def create_app() -> Flask:
     @app.get("/todo")
     def todo():
         _require_login()
+        edit_id_raw = (request.args.get("edit") or "").strip()
+        editing = None
+        if edit_id_raw.isdigit():
+            editing = get_todo_item(DB_PATH, int(edit_id_raw))
+            if not editing:
+                flash("수정할 항목을 찾지 못했습니다.", "error")
+        elif edit_id_raw:
+            flash("수정할 항목 번호가 올바르지 않습니다.", "error")
+
         daily, active_pending, active_done = fetch_todo_items(DB_PATH)
         for item in daily:
             item["body_html"] = _escape_with_br(str(item.get("body") or ""))
@@ -684,6 +696,7 @@ def create_app() -> Flask:
             daily=daily,
             active_pending=active_pending,
             active_done=active_done,
+            editing=editing,
         )
 
     @app.post("/todo/daily")
@@ -720,6 +733,32 @@ def create_app() -> Flask:
         _require_login()
         check_todo_daily_item(DB_PATH, item_id)
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        return redirect(url_for("todo"))
+
+    @app.post("/todo/<int:item_id>/edit")
+    def todo_edit(item_id: int):
+        _require_login()
+        body = (request.form.get("body") or "").strip()
+        if not body:
+            flash("내용이 비어있습니다.", "error")
+            return redirect(url_for("todo", edit=item_id))
+        updated = update_todo_item(DB_PATH, item_id, body)
+        if not updated:
+            flash("수정할 항목을 찾지 못했습니다.", "error")
+        else:
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash("항목을 수정했습니다.", "ok")
+        return redirect(url_for("todo"))
+
+    @app.post("/todo/<int:item_id>/delete")
+    def todo_delete(item_id: int):
+        _require_login()
+        deleted = delete_todo_item(DB_PATH, item_id)
+        if not deleted:
+            flash("삭제할 항목을 찾지 못했습니다.", "error")
+        else:
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash("항목을 삭제했습니다.", "ok")
         return redirect(url_for("todo"))
 
     @app.get("/memories")

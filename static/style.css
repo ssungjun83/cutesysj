@@ -593,6 +593,12 @@ body {
   gap: 10px;
   font-size: 14px;
 }
+.todo-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.todo-actions form { margin: 0; }
 .todo-check input { width: 16px; height: 16px; }
 .todo-text { line-height: 1.5; }
 .todo-time {

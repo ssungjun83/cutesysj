@@ -664,6 +664,46 @@ def add_todo_item(db_path: Path, body: str, *, kind: str = "active") -> int:
         return int(cur.lastrowid)
 
 
+def get_todo_item(db_path: Path, item_id: int) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT id, body, kind, created_at, completed_at
+            FROM todo_items
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (int(item_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_todo_item(db_path: Path, item_id: int, body: str) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE todo_items
+            SET body = ?
+            WHERE id = ?
+            """,
+            (body, int(item_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def delete_todo_item(db_path: Path, item_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM todo_daily_checks WHERE item_id = ?", (int(item_id),))
+        cur = conn.execute("DELETE FROM todo_items WHERE id = ?", (int(item_id),))
+        conn.commit()
+        return cur.rowcount == 1
+
+
 def complete_todo_item(db_path: Path, item_id: int, completed_at: str | None = None) -> bool:
     init_db(db_path)
     completed_value = completed_at or _now_seoul_timestamp()
