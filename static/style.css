@@ -1,10 +1,10 @@
 :root {
-  --bg: #ffffff;
+  --bg: #f6f7fb;
   --chat-bg: #b9cfe6;
-  --card: rgba(255, 255, 255, 0.92);
+  --card: #ffffff;
   --text: #0b1220;
-  --muted: rgba(11, 18, 32, 0.62);
-  --line: rgba(11, 18, 32, 0.10);
+  --muted: #5b6475;
+  --line: rgba(11, 18, 32, 0.16);
   --bubble-other: #ffffff;
   --bubble-me: #ffe500;
   --accent: #215cff;
@@ -41,24 +41,27 @@ body {
 .title { margin: 0 0 6px 0; font-size: 20px; }
 .sub { margin: 0 0 14px 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
 
-.label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+.label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
 .input, .textarea {
   width: 100%;
-  background: rgba(255,255,255,0.65);
+  background: #ffffff;
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   outline: none;
 }
 .textarea { resize: vertical; }
-.input:focus, .textarea:focus { border-color: rgba(33, 92, 255, 0.55); }
+.input:focus, .textarea:focus {
+  border-color: rgba(33, 92, 255, 0.48);
+  box-shadow: 0 0 0 3px rgba(33, 92, 255, 0.10);
+}
 
 .btn {
   margin-top: 12px;
   width: 100%;
-  border: 1px solid rgba(33, 92, 255, 0.25);
-  background: rgba(33, 92, 255, 0.08);
+  border: 1px solid rgba(33, 92, 255, 0.30);
+  background: rgba(33, 92, 255, 0.10);
   color: var(--text);
   border-radius: 12px;
   padding: 10px 12px;
@@ -103,8 +106,8 @@ body {
   column-gap: 12px;
   row-gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.65);
+  border-bottom: 1px solid rgba(11, 18, 32, 0.12);
+  background: rgba(255, 255, 255, 0.90);
   backdrop-filter: blur(12px);
 }
 .topbar-title { font-weight: 700; grid-area: title; }
@@ -115,8 +118,8 @@ body {
   gap: 8px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(11, 18, 32, 0.04);
-  border: 1px solid rgba(11, 18, 32, 0.08);
+  background: rgba(11, 18, 32, 0.03);
+  border: 1px solid rgba(11, 18, 32, 0.12);
   justify-self: center;
 }
 .tab {
@@ -246,8 +249,8 @@ body {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  padding: 18px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.06);
   margin-bottom: 16px;
 }
 .diary-editor .btn { width: auto; }
@@ -300,22 +303,22 @@ body {
   font-weight: 600;
 }
 .btn-link:hover { background: rgba(33, 92, 255, 0.12); }
-.section-title { margin: 0 0 10px 0; font-size: 15px; }
+.section-title { margin: 0 0 10px 0; font-size: 18px; }
 .export-section { margin-top: 14px; }
 .export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .diary-list { display: flex; flex-direction: column; gap: 12px; }
 .diary-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .diary-count { font-size: 12px; color: var(--muted); }
 .diary-item {
-  background: rgba(255, 255, 255, 0.85);
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 12px;
+  padding: 14px;
 }
 .diary-meta { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .diary-date { font-size: 12px; color: var(--muted); }
 .diary-title { font-weight: 700; }
-.diary-body { line-height: 1.7; }
+.diary-body { line-height: 1.8; font-size: 15px; }
 .diary-item-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .diary-comments {
   margin-top: 12px;
@@ -553,11 +556,11 @@ body {
   gap: 16px;
 }
 .todo-card {
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+  padding: 18px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.06);
 }
 .todo-form-row {
   display: flex;
@@ -581,7 +584,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: rgba(255, 255, 255, 0.8);
+  background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
@@ -598,12 +601,16 @@ body {
   align-items: center;
   gap: 10px;
 }
+.todo-actions .link,
+.todo-actions .link-button {
+  font-size: 13px;
+}
 .todo-actions form { margin: 0; }
 .todo-check input { width: 16px; height: 16px; }
 .todo-text { line-height: 1.5; }
 .todo-time {
   font-size: 12px;
-  color: var(--muted);
+  color: #4f5b70;
   white-space: nowrap;
 }
 .todo-empty {
