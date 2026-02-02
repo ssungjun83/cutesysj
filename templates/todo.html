@@ -76,9 +76,9 @@
       <section class="todo-card">
         <h2 class="section-title">설레는 하루</h2>
         <form class="todo-form" method="post" action="{{ url_for('todo_active_post') }}">
-          <label class="label">한 번 완료할 일</label>
+          <label class="label">한 번 완료할 약속</label>
           <div class="todo-form-row">
-            <input class="input" type="text" name="body" placeholder="지금 진행할 미션을 적어주세요." />
+            <input class="input" type="text" name="body" placeholder="지금 진행할 약속을 적어주세요." />
             <button class="btn btn-secondary" type="submit">추가</button>
           </div>
         </form>
@@ -111,7 +111,7 @@
               {% endif %}
             {% endfor %}
           {% else %}
-            <div class="todo-empty">진행 중인 미션이 없습니다.</div>
+            <div class="todo-empty">진행 중인 약속이 없습니다.</div>
           {% endif %}
         </div>
 
@@ -141,7 +141,7 @@
               {% endif %}
             {% endfor %}
           {% else %}
-            <div class="todo-empty">완료한 미션이 아직 없습니다.</div>
+            <div class="todo-empty">완료한 약속이 아직 없습니다.</div>
           {% endif %}
         </div>
       </section>
