@@ -255,7 +255,6 @@ def _split_tags(tags: str) -> list[str]:
 
 def _todo_tags_from_input(value: str) -> tuple[str, list[str]]:
     tags = _split_tags((value or "").replace("#", " "))
-    tags = tags[:3]
     return ", ".join(tags), tags
 
 
@@ -729,9 +728,6 @@ def create_app() -> Flask:
             flash("내용이 비어있습니다.", "error")
             return redirect(url_for("todo"))
         tags_clean, _tags_list = _todo_tags_from_input(tags_raw)
-        if len(_split_tags(tags_raw.replace("#", " "))) > 3:
-            flash("키워드는 최대 3개까지 등록할 수 있습니다.", "error")
-            return redirect(url_for("todo"))
         add_todo_item(DB_PATH, body, kind="active", tags=tags_clean)
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
@@ -757,9 +753,6 @@ def create_app() -> Flask:
         tags_raw = (request.form.get("tags") or "").strip()
         if not body:
             flash("내용이 비어있습니다.", "error")
-            return redirect(url_for("todo", edit=item_id))
-        if len(_split_tags(tags_raw.replace("#", " "))) > 3:
-            flash("키워드는 최대 3개까지 등록할 수 있습니다.", "error")
             return redirect(url_for("todo", edit=item_id))
         tags_clean, _tags_list = _todo_tags_from_input(tags_raw)
         updated = update_todo_item(DB_PATH, item_id, body, tags=tags_clean)

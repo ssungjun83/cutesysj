@@ -81,7 +81,7 @@
             <input class="input" type="text" name="body" placeholder="지금 진행할 약속을 적어주세요." />
             <button class="btn btn-secondary" type="submit">추가</button>
           </div>
-          <label class="label">키워드 (최대 3개, 쉼표로 구분)</label>
+          <label class="label">키워드 (쉼표로 구분)</label>
           <input class="input" type="text" name="tags" placeholder="예: 데이트, 산책, 카페" />
         </form>
         <div class="todo-list">
@@ -91,7 +91,7 @@
                 <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
                   <input class="input" type="text" name="body" value="{{ editing.body }}" />
                   {% if editing.kind == "active" %}
-                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 1~3개" />
+                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 여러 개 입력 가능" />
                   {% endif %}
                   <div class="todo-actions">
                     <button class="btn btn-secondary" type="submit">저장</button>
@@ -135,7 +135,7 @@
                 <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
                   <input class="input" type="text" name="body" value="{{ editing.body }}" />
                   {% if editing.kind == "active" %}
-                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 1~3개" />
+                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 여러 개 입력 가능" />
                   {% endif %}
                   <div class="todo-actions">
                     <button class="btn btn-secondary" type="submit">저장</button>

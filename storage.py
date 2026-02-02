@@ -659,7 +659,7 @@ def _normalize_todo_tags(tags: str | None) -> str:
         return ""
     parts = [part.strip() for part in raw.split(",")]
     cleaned = [part for part in parts if part]
-    return ", ".join(cleaned[:3])
+    return ", ".join(cleaned)
 
 
 def add_todo_item(db_path: Path, body: str, *, kind: str = "active", tags: str | None = None) -> int:
