@@ -609,6 +609,20 @@ body {
 .todo-actions form { margin: 0; }
 .todo-check input { width: 16px; height: 16px; }
 .todo-text { line-height: 1.5; }
+.todo-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.todo-tag {
+  font-size: 11px;
+  color: #355078;
+  background: rgba(33, 92, 255, 0.1);
+  border: 1px solid rgba(33, 92, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
 .todo-time {
   font-size: 12px;
   color: #4f5b70;

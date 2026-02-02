@@ -253,6 +253,12 @@ def _split_tags(tags: str) -> list[str]:
     return [part for part in parts if part]
 
 
+def _todo_tags_from_input(value: str) -> tuple[str, list[str]]:
+    tags = _split_tags((value or "").replace("#", " "))
+    tags = tags[:3]
+    return ", ".join(tags), tags
+
+
 def _csv_header_fields(text: str) -> set[str]:
     _meta, body = strip_export_header(text)
     for line in body.splitlines():
@@ -678,6 +684,8 @@ def create_app() -> Flask:
             editing = get_todo_item(DB_PATH, int(edit_id_raw))
             if not editing:
                 flash("수정할 항목을 찾지 못했습니다.", "error")
+            else:
+                editing["tags_value"] = str(editing.get("tags") or "")
         elif edit_id_raw:
             flash("수정할 항목 번호가 올바르지 않습니다.", "error")
 
@@ -688,9 +696,11 @@ def create_app() -> Flask:
             item["today_completed_at_display"] = _format_comment_ts(str(item.get("today_completed_at") or ""))
         for item in active_pending:
             item["body_html"] = _escape_with_br(str(item.get("body") or ""))
+            item["tags_list"] = _split_tags(str(item.get("tags") or ""))
         for item in active_done:
             item["body_html"] = _escape_with_br(str(item.get("body") or ""))
             item["completed_at_display"] = _format_comment_ts(str(item.get("completed_at") or ""))
+            item["tags_list"] = _split_tags(str(item.get("tags") or ""))
         return render_template(
             "todo.html",
             daily=daily,
@@ -714,10 +724,15 @@ def create_app() -> Flask:
     def todo_active_post():
         _require_login()
         body = (request.form.get("body") or "").strip()
+        tags_raw = (request.form.get("tags") or "").strip()
         if not body:
             flash("내용이 비어있습니다.", "error")
             return redirect(url_for("todo"))
-        add_todo_item(DB_PATH, body, kind="active")
+        tags_clean, _tags_list = _todo_tags_from_input(tags_raw)
+        if len(_split_tags(tags_raw.replace("#", " "))) > 3:
+            flash("키워드는 최대 3개까지 등록할 수 있습니다.", "error")
+            return redirect(url_for("todo"))
+        add_todo_item(DB_PATH, body, kind="active", tags=tags_clean)
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
@@ -739,10 +754,15 @@ def create_app() -> Flask:
     def todo_edit(item_id: int):
         _require_login()
         body = (request.form.get("body") or "").strip()
+        tags_raw = (request.form.get("tags") or "").strip()
         if not body:
             flash("내용이 비어있습니다.", "error")
             return redirect(url_for("todo", edit=item_id))
-        updated = update_todo_item(DB_PATH, item_id, body)
+        if len(_split_tags(tags_raw.replace("#", " "))) > 3:
+            flash("키워드는 최대 3개까지 등록할 수 있습니다.", "error")
+            return redirect(url_for("todo", edit=item_id))
+        tags_clean, _tags_list = _todo_tags_from_input(tags_raw)
+        updated = update_todo_item(DB_PATH, item_id, body, tags=tags_clean)
         if not updated:
             flash("수정할 항목을 찾지 못했습니다.", "error")
         else:

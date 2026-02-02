@@ -76,11 +76,13 @@
       <section class="todo-card">
         <h2 class="section-title">설레는 하루</h2>
         <form class="todo-form" method="post" action="{{ url_for('todo_active_post') }}">
-          <label class="label">한 번 완료할 약속</label>
+          <label class="label">함께 할 시간</label>
           <div class="todo-form-row">
             <input class="input" type="text" name="body" placeholder="지금 진행할 약속을 적어주세요." />
             <button class="btn btn-secondary" type="submit">추가</button>
           </div>
+          <label class="label">키워드 (최대 3개, 쉼표로 구분)</label>
+          <input class="input" type="text" name="tags" placeholder="예: 데이트, 산책, 카페" />
         </form>
         <div class="todo-list">
           {% if active_pending %}
@@ -88,6 +90,9 @@
               {% if editing and editing.id == item.id %}
                 <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
                   <input class="input" type="text" name="body" value="{{ editing.body }}" />
+                  {% if editing.kind == "active" %}
+                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 1~3개" />
+                  {% endif %}
                   <div class="todo-actions">
                     <button class="btn btn-secondary" type="submit">저장</button>
                     <a class="link" href="{{ url_for('todo') }}">취소</a>
@@ -101,6 +106,13 @@
                       <span class="todo-text">{{ item.body_html }}</span>
                     </label>
                   </form>
+                  {% if item.tags_list %}
+                    <div class="todo-tags">
+                      {% for tag in item.tags_list %}
+                        <span class="todo-tag">#{{ tag }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
                   <div class="todo-actions">
                     <a class="link" href="{{ url_for('todo', edit=item.id) }}">수정</a>
                     <form method="post" action="{{ url_for('todo_delete', item_id=item.id) }}">
@@ -122,6 +134,9 @@
               {% if editing and editing.id == item.id %}
                 <form class="todo-item" method="post" action="{{ url_for('todo_edit', item_id=item.id) }}">
                   <input class="input" type="text" name="body" value="{{ editing.body }}" />
+                  {% if editing.kind == "active" %}
+                    <input class="input" type="text" name="tags" value="{{ editing.tags_value or '' }}" placeholder="키워드 1~3개" />
+                  {% endif %}
                   <div class="todo-actions">
                     <button class="btn btn-secondary" type="submit">저장</button>
                     <a class="link" href="{{ url_for('todo') }}">취소</a>
@@ -130,6 +145,13 @@
               {% else %}
                 <div class="todo-item done">
                   <div class="todo-text">{{ item.body_html }}</div>
+                  {% if item.tags_list %}
+                    <div class="todo-tags">
+                      {% for tag in item.tags_list %}
+                        <span class="todo-tag">#{{ tag }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
                   <div class="todo-actions">
                     <div class="todo-time">{{ item.completed_at_display }}</div>
                     <a class="link" href="{{ url_for('todo', edit=item.id) }}">수정</a>

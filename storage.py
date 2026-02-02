@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS todo_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   body TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'active',
+  tags TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   completed_at TEXT
 );
@@ -201,6 +202,10 @@ def init_db(db_path: Path) -> None:
         # Backward-compatible migration for existing DBs created before todo kind was added.
         try:
             conn.execute("ALTER TABLE todo_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'active'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE todo_items ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
         conn.commit()
@@ -648,17 +653,27 @@ def delete_diary_comment(db_path: Path, comment_id: int) -> bool:
         return cur.rowcount == 1
 
 
-def add_todo_item(db_path: Path, body: str, *, kind: str = "active") -> int:
+def _normalize_todo_tags(tags: str | None) -> str:
+    raw = (tags or "").replace("#", " ").strip()
+    if not raw:
+        return ""
+    parts = [part.strip() for part in raw.split(",")]
+    cleaned = [part for part in parts if part]
+    return ", ".join(cleaned[:3])
+
+
+def add_todo_item(db_path: Path, body: str, *, kind: str = "active", tags: str | None = None) -> int:
     init_db(db_path)
     created_at = _now_seoul_timestamp()
     kind_value = "daily" if kind == "daily" else "active"
+    tags_value = _normalize_todo_tags(tags if kind_value == "active" else "")
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """
-            INSERT INTO todo_items (body, kind, created_at)
-            VALUES (?, ?, ?)
+            INSERT INTO todo_items (body, kind, tags, created_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (body, kind_value, created_at),
+            (body, kind_value, tags_value, created_at),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -670,7 +685,7 @@ def get_todo_item(db_path: Path, item_id: int) -> dict | None:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
-            SELECT id, body, kind, created_at, completed_at
+            SELECT id, body, kind, tags, created_at, completed_at
             FROM todo_items
             WHERE id = ?
             LIMIT 1
@@ -680,16 +695,18 @@ def get_todo_item(db_path: Path, item_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def update_todo_item(db_path: Path, item_id: int, body: str) -> bool:
+def update_todo_item(db_path: Path, item_id: int, body: str, *, tags: str | None = None) -> bool:
     init_db(db_path)
+    tags_value = _normalize_todo_tags(tags)
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """
             UPDATE todo_items
-            SET body = ?
+            SET body = ?,
+                tags = CASE WHEN kind = 'active' THEN ? ELSE '' END
             WHERE id = ?
             """,
-            (body, int(item_id)),
+            (body, tags_value, int(item_id)),
         )
         conn.commit()
         return cur.rowcount == 1
@@ -763,6 +780,7 @@ def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict], list[dict]]
             SELECT t.id,
                    t.body,
                    t.kind,
+                   t.tags,
                    t.created_at,
                    t.completed_at,
                    dc.completed_at AS today_completed_at
@@ -777,7 +795,7 @@ def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict], list[dict]]
         ).fetchall()
         pending_rows = conn.execute(
             """
-            SELECT id, body, kind, created_at, completed_at
+            SELECT id, body, kind, tags, created_at, completed_at
             FROM todo_items
             WHERE kind = 'active' AND completed_at IS NULL
             ORDER BY created_at ASC, id ASC
@@ -785,7 +803,7 @@ def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict], list[dict]]
         ).fetchall()
         done_rows = conn.execute(
             """
-            SELECT id, body, kind, created_at, completed_at
+            SELECT id, body, kind, tags, created_at, completed_at
             FROM todo_items
             WHERE kind = 'active' AND completed_at IS NOT NULL
             ORDER BY completed_at DESC, id DESC
