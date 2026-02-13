@@ -11,6 +11,7 @@ KakaoTalk_*.txt
 *.jpeg
 *.png
 *.gif
+drive-key.json
 
 # 공유용 터널 바이너리(실행 시 자동 다운로드)
 /tools/cloudflared.exe
