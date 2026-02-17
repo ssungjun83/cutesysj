@@ -48,6 +48,7 @@
           <input class="input jump-date-input" id="focus-date-input" type="date" name="date" value="{{ focus_date or '' }}" />
           <button class="btn btn-secondary" type="submit">이동</button>
         </form>
+        <button class="btn btn-secondary chat-sidebar-open-btn" type="button" id="bookmark-sidebar-open">책갈피</button>
       </div>
     </header>
 
@@ -64,29 +65,6 @@
     {% if search_query %}
       <div class="search-banner">“{{ search_query }}” 검색 결과: {{ search_count or 0 }}건</div>
     {% endif %}
-
-    <section class="chat-bookmark-panel">
-      <div class="chat-bookmark-toolbar">
-        <form id="bookmark-save-form" class="chat-bookmark-save-form" method="post" action="{{ url_for('chat_bookmark_add') }}">
-          <input type="hidden" name="view" value="chat" />
-          <input type="hidden" name="q" value="{{ search_query or '' }}" />
-          <input type="hidden" name="date" value="{{ focus_date or '' }}" />
-          <input type="hidden" name="message_id" id="bookmark-message-id" />
-          <input type="hidden" name="start_message_id" id="bookmark-start" />
-          <input type="hidden" name="end_message_id" id="bookmark-end" />
-          <input class="input chat-bookmark-title" type="text" name="title" id="bookmark-title" placeholder="책갈피 이름 (선택)" />
-          <button class="btn btn-secondary" type="button" id="bookmark-save-single">선택 1개 저장</button>
-          <button class="btn btn-secondary" type="button" id="bookmark-save-range">선택 범위 저장</button>
-          <button class="btn btn-secondary" type="button" id="bookmark-clear-selection">선택 해제</button>
-        </form>
-      </div>
-      <div class="chat-bookmark-status" id="bookmark-status">
-        메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
-        {% if loaded_start_date and loaded_end_date %}
-          · 현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}
-        {% endif %}
-      </div>
-    </section>
 
     <div class="chat-main-wrap">
       <main class="chat" id="chat-scroll">
@@ -110,8 +88,28 @@
         {% endfor %}
       </main>
 
-      <aside class="chat-sidebar">
-        <div class="chat-sidebar-head">책갈피 {{ bookmarks|length }}개</div>
+      <aside class="chat-sidebar" id="chat-sidebar">
+        <div class="chat-sidebar-head-row">
+          <div class="chat-sidebar-head">책갈피 {{ bookmarks|length }}개</div>
+          <button class="btn btn-secondary chat-sidebar-close-btn" type="button" id="bookmark-sidebar-close">닫기</button>
+        </div>
+        <form id="bookmark-save-form" class="chat-bookmark-save-form chat-bookmark-save-form-side" method="post" action="{{ url_for('chat_bookmark_add') }}">
+          <input type="hidden" name="view" value="chat" />
+          <input type="hidden" name="q" value="{{ search_query or '' }}" />
+          <input type="hidden" name="date" value="{{ focus_date or '' }}" />
+          <input type="hidden" name="message_id" id="bookmark-message-id" />
+          <input type="hidden" name="start_message_id" id="bookmark-start" />
+          <input type="hidden" name="end_message_id" id="bookmark-end" />
+          <button class="btn btn-secondary" type="button" id="bookmark-save-single">선택 1개 저장</button>
+          <button class="btn btn-secondary" type="button" id="bookmark-save-range">선택 범위 저장</button>
+          <button class="btn btn-secondary" type="button" id="bookmark-clear-selection">선택 해제</button>
+        </form>
+        <div class="chat-bookmark-status" id="bookmark-status" data-default="메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택">
+          메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
+        </div>
+        {% if loaded_start_date and loaded_end_date %}
+          <div class="chat-bookmark-load-range">현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}</div>
+        {% endif %}
         {% if bookmarks %}
           <div class="chat-bookmark-list-vertical">
             {% for b in bookmarks %}
@@ -133,6 +131,7 @@
         {% endif %}
       </aside>
     </div>
+    <div class="chat-sidebar-backdrop" id="bookmark-sidebar-backdrop"></div>
 
     <script>
       (function () {
@@ -167,7 +166,7 @@
           startInput.value = "";
           endInput.value = "";
 
-          var prefix = "메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택";
+          var prefix = statusEl.getAttribute("data-default") || "메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택";
           if (selectedRows.length === 0) {
             statusEl.textContent = prefix;
             return;
@@ -241,6 +240,33 @@
         }
 
         updateSelectionUI();
+
+        var openSidebarBtn = document.getElementById("bookmark-sidebar-open");
+        var closeSidebarBtn = document.getElementById("bookmark-sidebar-close");
+        var sidebarBackdrop = document.getElementById("bookmark-sidebar-backdrop");
+
+        function setSidebarOpen(isOpen) {
+          document.body.classList.toggle("bookmark-sidebar-open", Boolean(isOpen));
+        }
+
+        if (openSidebarBtn) {
+          openSidebarBtn.addEventListener("click", function () {
+            setSidebarOpen(true);
+          });
+        }
+        if (closeSidebarBtn) {
+          closeSidebarBtn.addEventListener("click", function () {
+            setSidebarOpen(false);
+          });
+        }
+        if (sidebarBackdrop) {
+          sidebarBackdrop.addEventListener("click", function () {
+            setSidebarOpen(false);
+          });
+        }
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") setSidebarOpen(false);
+        });
 
         var chat = document.getElementById("chat-scroll");
         var targetMessageId = {{ bookmark_target_message_id | tojson }};

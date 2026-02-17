@@ -496,11 +496,11 @@ def add_chat_bookmark(
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         start_row = conn.execute(
-            "SELECT id, dt, sender FROM messages WHERE id = ? LIMIT 1",
+            "SELECT id, dt, sender, text FROM messages WHERE id = ? LIMIT 1",
             (start_id,),
         ).fetchone()
         end_row = conn.execute(
-            "SELECT id, dt, sender FROM messages WHERE id = ? LIMIT 1",
+            "SELECT id, dt, sender, text FROM messages WHERE id = ? LIMIT 1",
             (end_id,),
         ).fetchone()
         if not start_row or not end_row:
@@ -517,8 +517,15 @@ def add_chat_bookmark(
 
         title_value = (title or "").strip()
         if not title_value:
-            dt_text = str(start_row["dt"]).replace("T", " ")
-            title_value = f"{dt_text[:16]} | {start_row['sender']}"
+            first_text = str(start_row["text"] or "").replace("\r\n", "\n").replace("\r", "\n")
+            first_line = first_text.split("\n", 1)[0].strip()
+            if len(first_line) > 28:
+                first_line = first_line[:28].rstrip() + "..."
+            if first_line:
+                title_value = first_line
+            else:
+                dt_text = str(start_row["dt"]).replace("T", " ")
+                title_value = f"{dt_text[:16]} | {start_row['sender']}"
 
         cur = conn.execute(
             """

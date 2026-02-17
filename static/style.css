@@ -254,46 +254,26 @@ body {
   font-size: 12px;
 }
 
-.chat-bookmark-panel {
-  max-width: 900px;
-  width: 100%;
-  margin: 10px auto 0;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 8px;
-}
-.chat-bookmark-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 .chat-bookmark-save-form {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
-}
-.chat-bookmark-title {
-  max-width: 260px;
   margin: 0;
-  padding: 8px 10px;
 }
 .chat-bookmark-save-form .btn {
   margin: 0;
+  width: 100%;
 }
 .chat-bookmark-status {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 6px;
+  margin-top: 8px;
 }
-.chat-bookmark-list {
-  display: flex;
-  gap: 8px;
-  overflow: auto;
-  padding-bottom: 4px;
+.chat-bookmark-load-range {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
 }
 .chat-main-wrap {
   max-width: 1320px;
@@ -312,6 +292,13 @@ body {
   width: 100%;
   height: 100%;
 }
+.chat-sidebar-open-btn {
+  display: none;
+  margin-top: 0;
+}
+.chat-sidebar-backdrop {
+  display: none;
+}
 .chat-sidebar {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -319,16 +306,34 @@ body {
   padding: 10px;
   overflow: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-sidebar-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .chat-sidebar-head {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
 }
+.chat-sidebar-close-btn {
+  display: none;
+  margin: 0;
+  padding: 6px 10px;
+}
+.chat-bookmark-save-form-side {
+  margin-bottom: 10px;
+}
 .chat-bookmark-list-vertical {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: auto;
+  min-height: 0;
 }
 .chat-bookmark-empty {
   font-size: 12px;
@@ -808,8 +813,46 @@ body {
   .chat-main-wrap {
     grid-template-columns: 1fr;
   }
+  .chat-sidebar-open-btn {
+    display: inline-flex;
+    width: auto;
+  }
+  .chat-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(11, 18, 32, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
   .chat-sidebar {
-    max-height: 240px;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    width: min(92vw, 360px);
+    border-radius: 0;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    box-shadow: -10px 0 26px rgba(0, 0, 0, 0.2);
+    background: #ffffff;
+    padding-top: 14px;
+  }
+  body.bookmark-sidebar-open .chat-sidebar {
+    transform: translateX(0);
+  }
+  body.bookmark-sidebar-open .chat-sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .chat-sidebar-close-btn {
+    display: inline-flex;
+  }
+  .chat-sidebar {
+    max-height: none;
   }
   .memories-detail-card {
     grid-template-columns: 1fr;
