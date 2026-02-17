@@ -112,23 +112,29 @@
         {% if bookmarks %}
           <div class="chat-bookmark-list-vertical">
             {% for b in bookmarks %}
-              <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}">
-                <a class="chat-bookmark-link" href="{{ url_for('index', view='chat', q=search_query, bookmark=b.id) }}">{{ b.display_title }}</a>
-                <div class="chat-bookmark-meta">{{ b.display_range }}</div>
-                <form class="chat-bookmark-rename-form" method="post" action="{{ url_for('chat_bookmark_rename', bookmark_id=b.id) }}">
+              <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}" data-bookmark-item="{{ b.id }}">
+                <a class="chat-bookmark-link" data-bookmark-title-link href="{{ url_for('index', view='chat', q=search_query, bookmark=b.id) }}">{{ b.display_title }}</a>
+                <form class="chat-bookmark-rename-form" data-bookmark-rename-form method="post" action="{{ url_for('chat_bookmark_rename', bookmark_id=b.id) }}">
                   <input type="hidden" name="view" value="chat" />
                   <input type="hidden" name="q" value="{{ search_query or '' }}" />
                   <input type="hidden" name="date" value="{{ focus_date or '' }}" />
                   <input class="input chat-bookmark-rename-input" type="text" name="title" value="{{ b.display_title }}" maxlength="80" />
-                  <button class="btn btn-secondary chat-bookmark-rename-btn" type="submit">이름 변경</button>
+                  <div class="chat-bookmark-item-actions">
+                    <button class="btn btn-secondary chat-bookmark-rename-btn" type="submit">저장</button>
+                    <button class="bookmark-action-button" data-bookmark-rename-cancel type="button">취소</button>
+                  </div>
                 </form>
-                <form method="post" action="{{ url_for('chat_bookmark_delete', bookmark_id=b.id) }}">
-                  <input type="hidden" name="view" value="chat" />
-                  <input type="hidden" name="q" value="{{ search_query or '' }}" />
-                  <input type="hidden" name="date" value="{{ focus_date or '' }}" />
-                  <input type="hidden" name="bookmark" value="{{ bookmark_selected_id or '' }}" />
-                  <button class="link-button" type="submit">삭제</button>
-                </form>
+                <div class="chat-bookmark-meta">{{ b.display_range }}</div>
+                <div class="chat-bookmark-item-actions">
+                  <button class="bookmark-action-button chat-bookmark-rename-toggle" data-bookmark-rename-toggle type="button">이름 변경</button>
+                  <form method="post" action="{{ url_for('chat_bookmark_delete', bookmark_id=b.id) }}">
+                    <input type="hidden" name="view" value="chat" />
+                    <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                    <input type="hidden" name="date" value="{{ focus_date or '' }}" />
+                    <input type="hidden" name="bookmark" value="{{ bookmark_selected_id or '' }}" />
+                    <button class="link-button" type="submit">삭제</button>
+                  </form>
+                </div>
               </div>
             {% endfor %}
           </div>
@@ -298,6 +304,51 @@
             updateSelectionUI();
           });
         }
+
+        function closeRenameForms() {
+          Array.prototype.slice.call(document.querySelectorAll("[data-bookmark-item]")).forEach(function (item) {
+            var form = item.querySelector("[data-bookmark-rename-form]");
+            var link = item.querySelector("[data-bookmark-title-link]");
+            var toggle = item.querySelector("[data-bookmark-rename-toggle]");
+            if (form) form.classList.remove("is-open");
+            if (link) link.classList.remove("is-hidden");
+            if (toggle) toggle.classList.remove("is-hidden");
+          });
+        }
+
+        Array.prototype.slice.call(document.querySelectorAll("[data-bookmark-rename-toggle]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            var item = button.closest("[data-bookmark-item]");
+            if (!item) return;
+            closeRenameForms();
+            var form = item.querySelector("[data-bookmark-rename-form]");
+            var link = item.querySelector("[data-bookmark-title-link]");
+            var input = item.querySelector(".chat-bookmark-rename-input");
+            if (form) form.classList.add("is-open");
+            if (link) link.classList.add("is-hidden");
+            button.classList.add("is-hidden");
+            if (input) {
+              input.focus();
+              input.setSelectionRange(input.value.length, input.value.length);
+            }
+          });
+        });
+
+        Array.prototype.slice.call(document.querySelectorAll("[data-bookmark-rename-cancel]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            closeRenameForms();
+          });
+        });
+
+        Array.prototype.slice.call(document.querySelectorAll("[data-bookmark-rename-form]")).forEach(function (form) {
+          form.addEventListener("submit", function (event) {
+            var input = form.querySelector(".chat-bookmark-rename-input");
+            if (!input || input.value.trim()) return;
+            event.preventDefault();
+            alert("책갈피 이름을 입력해 주세요.");
+            input.focus();
+          });
+        });
 
         function setSidebarOpen(isOpen) {
           document.body.classList.toggle("bookmark-sidebar-open", Boolean(isOpen));

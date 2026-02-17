@@ -373,10 +373,17 @@ body {
   color: var(--muted);
 }
 .chat-bookmark-rename-form {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
+}
+.chat-bookmark-rename-form.is-open {
+  display: flex;
+}
+.chat-bookmark-link.is-hidden,
+.chat-bookmark-rename-toggle.is-hidden {
+  display: none;
 }
 .chat-bookmark-rename-input {
   margin: 0;
@@ -386,8 +393,27 @@ body {
 }
 .chat-bookmark-rename-btn {
   margin: 0;
-  width: 100%;
+  width: auto;
   padding: 7px 9px;
+}
+.chat-bookmark-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-bookmark-item-actions form {
+  margin: 0;
+}
+.bookmark-action-button {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.bookmark-action-button:hover {
+  text-decoration: underline;
 }
 
 .hl {
