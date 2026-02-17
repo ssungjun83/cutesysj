@@ -491,10 +491,8 @@ def fetch_chat_bookmarks(db_path: Path, *, limit: int | None = 200) -> list[dict
                    b.created_at,
                    sm.dt AS start_dt,
                    sm.sender AS start_sender,
-                   sm.text AS start_text,
                    em.dt AS end_dt,
-                   em.sender AS end_sender,
-                   em.text AS end_text
+                   em.sender AS end_sender
             FROM chat_bookmarks b
             JOIN messages sm ON sm.id = b.start_message_id
             LEFT JOIN messages em ON em.id = b.end_message_id
@@ -519,10 +517,8 @@ def get_chat_bookmark(db_path: Path, bookmark_id: int) -> dict | None:
                    b.created_at,
                    sm.dt AS start_dt,
                    sm.sender AS start_sender,
-                   sm.text AS start_text,
                    em.dt AS end_dt,
-                   em.sender AS end_sender,
-                   em.text AS end_text
+                   em.sender AS end_sender
             FROM chat_bookmarks b
             JOIN messages sm ON sm.id = b.start_message_id
             LEFT JOIN messages em ON em.id = b.end_message_id

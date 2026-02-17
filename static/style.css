@@ -196,9 +196,16 @@ body {
 }
 .msg-row.me { justify-content: flex-end; }
 .msg-row.other { justify-content: flex-start; }
-.msg-bookmark-highlight .bubble {
+.msg-selectable .bubble { cursor: pointer; }
+.msg-selectable:hover .bubble { border-color: rgba(33, 92, 255, 0.35); }
+.msg-selected .bubble {
   border-color: rgba(33, 92, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(33, 92, 255, 0.14), 0 6px 14px rgba(0,0,0,0.06);
+  box-shadow: 0 0 0 2px rgba(33, 92, 255, 0.12), 0 6px 14px rgba(0,0,0,0.06);
+}
+.msg-selected-end .bubble { border-style: dashed; }
+.msg-focus .bubble {
+  border-color: rgba(19, 115, 51, 0.6);
+  box-shadow: 0 0 0 3px rgba(19, 115, 51, 0.15), 0 6px 14px rgba(0,0,0,0.06);
 }
 
 .msg-col { display: flex; flex-direction: column; gap: 6px; max-width: 78%; }
@@ -216,42 +223,6 @@ body {
 }
 .bubble-other { background: var(--bubble-other); }
 .bubble-me { background: var(--bubble-me); }
-.msg-bookmark-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 6px;
-}
-.bookmark-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: 1px solid rgba(11, 18, 32, 0.2);
-  background: rgba(255, 255, 255, 0.8);
-  color: #3a4c66;
-  cursor: pointer;
-  line-height: 1;
-}
-.bookmark-btn.is-active {
-  color: #f4b400;
-  border-color: rgba(244, 180, 0, 0.45);
-  background: rgba(255, 244, 212, 0.9);
-}
-.bookmark-range-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.74);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 7px;
-}
-.bookmark-range-label input {
-  width: 13px;
-  height: 13px;
-}
 
 .chat-flash { max-width: 900px; width: 100%; margin: 10px auto 0; padding: 0 12px; }
 
@@ -269,31 +240,35 @@ body {
   width: 100%;
   margin: 10px auto 0;
   padding: 0 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.chat-bookmark-range-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 8px;
+}
+.chat-bookmark-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chat-bookmark-save-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .chat-bookmark-title {
   max-width: 260px;
   margin: 0;
   padding: 8px 10px;
 }
-.chat-bookmark-range-form .btn {
+.chat-bookmark-save-form .btn {
   margin: 0;
 }
-.chat-bookmark-range-status {
+.chat-bookmark-status {
   font-size: 12px;
   color: var(--muted);
+  margin-top: 6px;
 }
 .chat-bookmark-list {
   display: flex;
@@ -343,8 +318,9 @@ body {
   padding: 12px;
 }
 .txt-row { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
-.txt-row-bookmark-highlight {
-  background: rgba(33, 92, 255, 0.1);
+.msg-focus.txt-row,
+.txt-row.msg-focus {
+  background: rgba(19, 115, 51, 0.13);
   border-radius: 8px;
   padding: 2px 6px;
 }

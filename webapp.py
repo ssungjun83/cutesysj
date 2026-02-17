@@ -432,7 +432,7 @@ def create_app() -> Flask:
         else:
             raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
 
-        bookmark_items = fetch_chat_bookmarks(DB_PATH, limit=500)
+        bookmark_items = fetch_chat_bookmarks(DB_PATH, limit=200)
         for bookmark in bookmark_items:
             start_stamp = str(bookmark.get("start_dt") or "").replace("T", " ")[:16]
             end_stamp = str(bookmark.get("end_dt") or "").replace("T", " ")[:16]
@@ -457,25 +457,8 @@ def create_app() -> Flask:
                     selected_bookmark["start_message_id"] = int(selected_bookmark["start_message_id"])
 
         bookmark_target_message_id: int | None = None
-        bookmark_highlight_ids: set[int] = set()
         if selected_bookmark:
             bookmark_target_message_id = int(selected_bookmark["start_message_id"])
-            selected_end_raw = selected_bookmark.get("end_message_id")
-            if selected_end_raw:
-                selected_end_id = int(selected_end_raw)
-                idx_by_message_id = {int(msg["id"]): idx for idx, msg in enumerate(raw_messages)}
-                start_idx = idx_by_message_id.get(bookmark_target_message_id)
-                end_idx = idx_by_message_id.get(selected_end_id)
-                if start_idx is not None and end_idx is not None:
-                    lo, hi = sorted((start_idx, end_idx))
-                    for idx in range(lo, hi + 1):
-                        bookmark_highlight_ids.add(int(raw_messages[idx]["id"]))
-                else:
-                    bookmark_highlight_ids.add(bookmark_target_message_id)
-            else:
-                bookmark_highlight_ids.add(bookmark_target_message_id)
-
-        bookmark_start_ids = {int(item["start_message_id"]) for item in bookmark_items}
 
         days: list[DayGroup] = []
         current: DayGroup | None = None
@@ -488,14 +471,11 @@ def create_app() -> Flask:
             h12 = dt.hour % 12 or 12
             time_ko = f"{ampm} {h12}:{dt.minute:02d}"
 
-            message_id = int(m["id"])
             m["date_key"] = date_key
             m["date_ko"] = date_ko
             m["time_ko"] = time_ko
             m["seq"] = idx
             m["text_html"] = _highlight_html(m["text"], q if q else None)
-            m["is_bookmark_start"] = message_id in bookmark_start_ids
-            m["is_bookmark_highlight"] = message_id in bookmark_highlight_ids
 
             if current is None or current.date_key != date_key:
                 current = DayGroup(date_key=date_key, date_ko=date_ko, messages=[])
