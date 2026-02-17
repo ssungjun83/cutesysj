@@ -224,6 +224,9 @@
         function syncHasMoreFlags() {
           hasMorePrev = !oldestDate || !fetchCursorStartDate || compareDate(fetchCursorStartDate, oldestDate) > 0;
           hasMoreNext = !latestDate || !fetchCursorEndDate || compareDate(fetchCursorEndDate, latestDate) < 0;
+          if (fetchCursorStartDate) loadedStartDate = fetchCursorStartDate;
+          if (fetchCursorEndDate) loadedEndDate = fetchCursorEndDate;
+          updateLoadRangeText();
         }
 
         function escapeHtml(text) {
@@ -442,10 +445,7 @@
 
         function refreshLoadedRangeFromDom() {
           if (!chat) return;
-          var dayNodes = chat.querySelectorAll(".chat-day");
-          if (!dayNodes.length) return;
-          loadedStartDate = String(dayNodes[0].getAttribute("data-date-key") || loadedStartDate || "");
-          loadedEndDate = String(dayNodes[dayNodes.length - 1].getAttribute("data-date-key") || loadedEndDate || "");
+          if (!chat.querySelector(".chat-day")) return;
           updateLoadRangeText();
         }
 

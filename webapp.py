@@ -545,16 +545,12 @@ def create_app() -> Flask:
                 focus_date_value = focus_date.isoformat()
                 window_start = focus_date - timedelta(days=chunk_days)
                 window_end = focus_date + timedelta(days=chunk_days)
-                if oldest_focus_date and window_start < oldest_focus_date:
-                    window_start = oldest_focus_date
-                if latest_focus_date and window_end > latest_focus_date:
-                    window_end = latest_focus_date
                 loaded_start_date = window_start.isoformat()
                 loaded_end_date = window_end.isoformat()
                 raw_messages = fetch_messages_between(
                     DB_PATH,
-                    start_dt=f"{window_start.isoformat()}T00:00:00",
-                    end_dt=f"{window_end.isoformat()}T23:59:59",
+                    start_dt=window_start.isoformat(),
+                    end_dt=f"{window_end.isoformat()}~",
                     order="asc",
                     limit=1500,
                 )
@@ -608,8 +604,8 @@ def create_app() -> Flask:
 
         raw_messages = fetch_messages_between(
             DB_PATH,
-            start_dt=f"{start_date.isoformat()}T00:00:00",
-            end_dt=f"{end_date.isoformat()}T23:59:59",
+            start_dt=start_date.isoformat(),
+            end_dt=f"{end_date.isoformat()}~",
             order="asc",
             limit=1500,
         )
