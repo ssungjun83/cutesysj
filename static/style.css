@@ -284,7 +284,7 @@ body {
   margin: 0 auto;
   padding: 0 12px 20px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
+  grid-template-columns: minmax(0, 1fr) 192px;
   gap: 12px;
   flex: 1;
   min-height: 0;
@@ -836,7 +836,7 @@ body {
     right: 0;
     bottom: 0;
     z-index: 60;
-    width: min(46vw, 180px);
+    width: min(55vw, 216px);
     border-radius: 0;
     transform: translateX(100%);
     transition: transform 0.2s ease;
