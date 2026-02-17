@@ -552,7 +552,6 @@ def create_app() -> Flask:
                     start_dt=window_start.isoformat(),
                     end_dt=f"{window_end.isoformat()}~",
                     order="asc",
-                    limit=1500,
                 )
             else:
                 raw_messages = []
@@ -607,7 +606,6 @@ def create_app() -> Flask:
             start_dt=start_date.isoformat(),
             end_dt=f"{end_date.isoformat()}~",
             order="asc",
-            limit=1500,
         )
         me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
         messages = _decorate_chat_messages(raw_messages, search_term=None)
