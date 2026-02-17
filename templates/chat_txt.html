@@ -33,24 +33,13 @@
           {% endif %}
         </form>
         <div class="jump">
-          <label class="me-label">날짜 이동</label>
-          <select class="select" id="jump-day">
-            <option value="">(선택)</option>
-            {% for d in available_dates or [] %}
-              <option value="{{ url_for('index', view='txt', date=d.key, q=search_query) }}" {% if focus_date == d.key %}selected{% endif %}>{{ d.label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="jump">
-          <label class="me-label">책갈피 이동</label>
-          <select class="select" id="jump-bookmark">
-            <option value="">(선택)</option>
-            {% for b in bookmarks or [] %}
-              <option value="{{ url_for('index', view='txt', bookmark=b.id) }}" {% if bookmark_selected_id == b.id %}selected{% endif %}>
-                {{ b.display_title }}
-              </option>
-            {% endfor %}
-          </select>
+          <form class="jump-date-form" method="get" action="{{ url_for('index') }}">
+            <input type="hidden" name="view" value="txt" />
+            <input type="hidden" name="q" value="{{ search_query or '' }}" />
+            <label class="me-label" for="focus-date-input-txt">날짜 이동</label>
+            <input class="input jump-date-input" id="focus-date-input-txt" type="date" name="date" value="{{ focus_date or '' }}" />
+            <button class="btn btn-secondary" type="submit">이동</button>
+          </form>
         </div>
       </div>
     </header>
@@ -82,21 +71,6 @@
 
     <script>
       (function () {
-        var sel = document.getElementById("jump-day");
-        if (sel) {
-          sel.addEventListener("change", function () {
-            var url = sel.value;
-            if (!url) return;
-            location.href = url;
-          });
-        }
-        var bookmarkSel = document.getElementById("jump-bookmark");
-        if (bookmarkSel) {
-          bookmarkSel.addEventListener("change", function () {
-            if (!bookmarkSel.value) return;
-            location.href = bookmarkSel.value;
-          });
-        }
         var chat = document.getElementById("chat-scroll");
         var targetMessageId = {{ bookmark_target_message_id | tojson }};
         if (targetMessageId) {

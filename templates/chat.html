@@ -41,26 +41,13 @@
             {% endfor %}
           </select>
         </form>
-        <div class="jump">
-          <label class="me-label">날짜 이동</label>
-          <select class="select" id="jump-day">
-            <option value="">(선택)</option>
-            {% for d in available_dates or [] %}
-              <option value="{{ url_for('index', view='chat', date=d.key, q=search_query) }}" {% if focus_date == d.key %}selected{% endif %}>{{ d.label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="jump">
-          <label class="me-label">책갈피 이동</label>
-          <select class="select" id="jump-bookmark">
-            <option value="">(선택)</option>
-            {% for b in bookmarks or [] %}
-              <option value="{{ url_for('index', view='chat', bookmark=b.id) }}" data-bookmark-id="{{ b.id }}" {% if bookmark_selected_id == b.id %}selected{% endif %}>
-                {{ b.display_title }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
+        <form class="jump-date-form" method="get" action="{{ url_for('index') }}">
+          <input type="hidden" name="view" value="chat" />
+          <input type="hidden" name="q" value="{{ search_query or '' }}" />
+          <label class="me-label" for="focus-date-input">날짜 이동</label>
+          <input class="input jump-date-input" id="focus-date-input" type="date" name="date" value="{{ focus_date or '' }}" />
+          <button class="btn btn-secondary" type="submit">이동</button>
+        </form>
       </div>
     </header>
 
@@ -92,14 +79,6 @@
           <button class="btn btn-secondary" type="button" id="bookmark-save-range">선택 범위 저장</button>
           <button class="btn btn-secondary" type="button" id="bookmark-clear-selection">선택 해제</button>
         </form>
-
-        <form id="bookmark-delete-form" method="post">
-          <input type="hidden" name="view" value="chat" />
-          <input type="hidden" name="q" value="{{ search_query or '' }}" />
-          <input type="hidden" name="date" value="{{ focus_date or '' }}" />
-          <input type="hidden" name="bookmark" id="bookmark-delete-id" value="{{ bookmark_selected_id or '' }}" />
-          <button class="btn btn-secondary" type="submit" id="bookmark-delete-btn">선택 책갈피 삭제</button>
-        </form>
       </div>
       <div class="chat-bookmark-status" id="bookmark-status">
         메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
@@ -109,67 +88,54 @@
       </div>
     </section>
 
-    <main class="chat" id="chat-scroll">
-      {% for d in days or [] %}
-        <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
-        {% for m in d.messages %}
-          {% set is_me = (me_name and m.sender == me_name) %}
-          <div class="msg-row msg-selectable {{ 'me' if is_me else 'other' }}" id="msg-{{ m.id }}" data-msg-id="{{ m.id }}" data-msg-seq="{{ m.seq }}">
-            {% if is_me %}
-              <div class="time">{{ m.time_ko }}</div>
-              <div class="bubble bubble-me">{{ m.text_html }}</div>
-            {% else %}
-              <div class="msg-col">
-                <div class="sender">{{ m.sender }}</div>
-                <div class="bubble bubble-other">{{ m.text_html }}</div>
-              </div>
-              <div class="time">{{ m.time_ko }}</div>
-            {% endif %}
-          </div>
+    <div class="chat-main-wrap">
+      <main class="chat" id="chat-scroll">
+        {% for d in days or [] %}
+          <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
+          {% for m in d.messages %}
+            {% set is_me = (me_name and m.sender == me_name) %}
+            <div class="msg-row msg-selectable {{ 'me' if is_me else 'other' }}" id="msg-{{ m.id }}" data-msg-id="{{ m.id }}" data-msg-seq="{{ m.seq }}">
+              {% if is_me %}
+                <div class="time">{{ m.time_ko }}</div>
+                <div class="bubble bubble-me">{{ m.text_html }}</div>
+              {% else %}
+                <div class="msg-col">
+                  <div class="sender">{{ m.sender }}</div>
+                  <div class="bubble bubble-other">{{ m.text_html }}</div>
+                </div>
+                <div class="time">{{ m.time_ko }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
         {% endfor %}
-      {% endfor %}
-    </main>
+      </main>
+
+      <aside class="chat-sidebar">
+        <div class="chat-sidebar-head">책갈피 {{ bookmarks|length }}개</div>
+        {% if bookmarks %}
+          <div class="chat-bookmark-list-vertical">
+            {% for b in bookmarks %}
+              <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}">
+                <a class="chat-bookmark-link" href="{{ url_for('index', view='chat', q=search_query, bookmark=b.id) }}">{{ b.display_title }}</a>
+                <div class="chat-bookmark-meta">{{ b.display_range }}</div>
+                <form method="post" action="{{ url_for('chat_bookmark_delete', bookmark_id=b.id) }}">
+                  <input type="hidden" name="view" value="chat" />
+                  <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                  <input type="hidden" name="date" value="{{ focus_date or '' }}" />
+                  <input type="hidden" name="bookmark" value="{{ bookmark_selected_id or '' }}" />
+                  <button class="link-button" type="submit">삭제</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="chat-bookmark-empty">저장된 책갈피가 없습니다.</div>
+        {% endif %}
+      </aside>
+    </div>
 
     <script>
       (function () {
-        var daySel = document.getElementById("jump-day");
-        if (daySel) {
-          daySel.addEventListener("change", function () {
-            var url = daySel.value;
-            if (!url) return;
-            location.href = url;
-          });
-        }
-
-        var bookmarkSel = document.getElementById("jump-bookmark");
-        var deleteForm = document.getElementById("bookmark-delete-form");
-        var deleteInput = document.getElementById("bookmark-delete-id");
-        var deleteBtn = document.getElementById("bookmark-delete-btn");
-
-        function updateDeleteTarget() {
-          if (!bookmarkSel || !deleteForm || !deleteInput || !deleteBtn) return;
-          var option = bookmarkSel.options[bookmarkSel.selectedIndex];
-          var bookmarkId = option ? option.getAttribute("data-bookmark-id") : "";
-          deleteInput.value = bookmarkId || "";
-          if (!bookmarkId) {
-            deleteBtn.disabled = true;
-            deleteForm.removeAttribute("action");
-            return;
-          }
-          deleteBtn.disabled = false;
-          deleteForm.setAttribute("action", "/chat/bookmarks/" + bookmarkId + "/delete");
-        }
-
-        if (bookmarkSel) {
-          bookmarkSel.addEventListener("change", function () {
-            updateDeleteTarget();
-            var targetUrl = bookmarkSel.value;
-            if (!targetUrl) return;
-            location.href = targetUrl;
-          });
-        }
-        updateDeleteTarget();
-
         var saveForm = document.getElementById("bookmark-save-form");
         var messageIdInput = document.getElementById("bookmark-message-id");
         var startInput = document.getElementById("bookmark-start");
@@ -201,8 +167,9 @@
           startInput.value = "";
           endInput.value = "";
 
+          var prefix = "메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택";
           if (selectedRows.length === 0) {
-            statusEl.textContent = "메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택";
+            statusEl.textContent = prefix;
             return;
           }
           if (selectedRows.length === 1) {

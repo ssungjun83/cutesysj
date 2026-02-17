@@ -150,6 +150,7 @@ body {
 .search-form { display: flex; align-items: center; gap: 8px; }
 .me-form { display: flex; align-items: center; gap: 8px; }
 .jump { display: flex; align-items: center; gap: 8px; }
+.jump-date-form { display: flex; align-items: center; gap: 8px; }
 .me-label { font-size: 12px; color: var(--muted); }
 .search {
   width: 180px;
@@ -167,6 +168,11 @@ body {
   background: rgba(255,255,255,0.65);
   color: var(--text);
   max-width: 240px;
+}
+.jump-date-input {
+  width: 145px;
+  padding: 7px 10px;
+  border-radius: 10px;
 }
 
 .chat {
@@ -289,9 +295,50 @@ body {
   overflow: auto;
   padding-bottom: 4px;
 }
+.chat-main-wrap {
+  max-width: 1320px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 12px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.chat-main-wrap .chat {
+  margin: 0;
+  max-width: none;
+  width: 100%;
+  height: 100%;
+}
+.chat-sidebar {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 10px;
+  overflow: auto;
+  min-height: 0;
+}
+.chat-sidebar-head {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.chat-bookmark-list-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-bookmark-empty {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
 .chat-bookmark-item {
-  min-width: 220px;
-  max-width: 280px;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -758,6 +805,12 @@ body {
 }
 
 @media (max-width: 860px) {
+  .chat-main-wrap {
+    grid-template-columns: 1fr;
+  }
+  .chat-sidebar {
+    max-height: 240px;
+  }
   .memories-detail-card {
     grid-template-columns: 1fr;
   }
