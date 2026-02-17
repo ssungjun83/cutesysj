@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_dt ON messages(dt);
 
+CREATE TABLE IF NOT EXISTS chat_bookmarks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  start_message_id INTEGER NOT NULL,
+  end_message_id INTEGER,
+  title TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_bookmarks_start ON chat_bookmarks(start_message_id);
+CREATE INDEX IF NOT EXISTS idx_chat_bookmarks_end ON chat_bookmarks(end_message_id);
+
 CREATE TABLE IF NOT EXISTS diary_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   entry_date TEXT NOT NULL,
@@ -412,6 +423,123 @@ def get_oldest_dt(db_path: Path) -> str | None:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("SELECT dt FROM messages ORDER BY dt ASC, id ASC LIMIT 1").fetchone()
     return row[0] if row else None
+
+
+def add_chat_bookmark(
+    db_path: Path,
+    *,
+    start_message_id: int,
+    end_message_id: int | None = None,
+    title: str | None = None,
+) -> int | None:
+    init_db(db_path)
+    start_id = int(start_message_id)
+    end_id = int(end_message_id) if end_message_id else start_id
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        start_row = conn.execute(
+            "SELECT id, dt, sender FROM messages WHERE id = ? LIMIT 1",
+            (start_id,),
+        ).fetchone()
+        end_row = conn.execute(
+            "SELECT id, dt, sender FROM messages WHERE id = ? LIMIT 1",
+            (end_id,),
+        ).fetchone()
+        if not start_row or not end_row:
+            return None
+
+        start_key = (str(start_row["dt"]), int(start_row["id"]))
+        end_key = (str(end_row["dt"]), int(end_row["id"]))
+        if end_key < start_key:
+            start_row, end_row = end_row, start_row
+
+        normalized_start_id = int(start_row["id"])
+        normalized_end_id = int(end_row["id"])
+        end_value = normalized_end_id if normalized_end_id != normalized_start_id else None
+
+        title_value = (title or "").strip()
+        if not title_value:
+            dt_text = str(start_row["dt"]).replace("T", " ")
+            title_value = f"{dt_text[:16]} | {start_row['sender']}"
+
+        cur = conn.execute(
+            """
+            INSERT INTO chat_bookmarks (start_message_id, end_message_id, title)
+            VALUES (?, ?, ?)
+            """,
+            (normalized_start_id, end_value, title_value),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def fetch_chat_bookmarks(db_path: Path, *, limit: int | None = 200) -> list[dict]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        params: list[object] = []
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
+        rows = conn.execute(
+            f"""
+            SELECT b.id,
+                   b.start_message_id,
+                   b.end_message_id,
+                   b.title,
+                   b.created_at,
+                   sm.dt AS start_dt,
+                   sm.sender AS start_sender,
+                   sm.text AS start_text,
+                   em.dt AS end_dt,
+                   em.sender AS end_sender,
+                   em.text AS end_text
+            FROM chat_bookmarks b
+            JOIN messages sm ON sm.id = b.start_message_id
+            LEFT JOIN messages em ON em.id = b.end_message_id
+            ORDER BY b.id DESC
+            {limit_sql}
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_chat_bookmark(db_path: Path, bookmark_id: int) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT b.id,
+                   b.start_message_id,
+                   b.end_message_id,
+                   b.title,
+                   b.created_at,
+                   sm.dt AS start_dt,
+                   sm.sender AS start_sender,
+                   sm.text AS start_text,
+                   em.dt AS end_dt,
+                   em.sender AS end_sender,
+                   em.text AS end_text
+            FROM chat_bookmarks b
+            JOIN messages sm ON sm.id = b.start_message_id
+            LEFT JOIN messages em ON em.id = b.end_message_id
+            WHERE b.id = ?
+            LIMIT 1
+            """,
+            (int(bookmark_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_chat_bookmark(db_path: Path, bookmark_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM chat_bookmarks WHERE id = ?", (int(bookmark_id),))
+        conn.commit()
+        return cur.rowcount == 1
 
 
 def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> int:

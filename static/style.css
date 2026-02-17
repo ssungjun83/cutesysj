@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f6f7fb;
   --chat-bg: #b9cfe6;
   --card: #ffffff;
@@ -196,6 +196,10 @@ body {
 }
 .msg-row.me { justify-content: flex-end; }
 .msg-row.other { justify-content: flex-start; }
+.msg-bookmark-highlight .bubble {
+  border-color: rgba(33, 92, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(33, 92, 255, 0.14), 0 6px 14px rgba(0,0,0,0.06);
+}
 
 .msg-col { display: flex; flex-direction: column; gap: 6px; max-width: 78%; }
 .sender { font-size: 12px; font-weight: 500; color: rgba(11, 18, 32, 0.75); margin-left: 4px; }
@@ -212,6 +216,42 @@ body {
 }
 .bubble-other { background: var(--bubble-other); }
 .bubble-me { background: var(--bubble-me); }
+.msg-bookmark-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 6px;
+}
+.bookmark-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(11, 18, 32, 0.2);
+  background: rgba(255, 255, 255, 0.8);
+  color: #3a4c66;
+  cursor: pointer;
+  line-height: 1;
+}
+.bookmark-btn.is-active {
+  color: #f4b400;
+  border-color: rgba(244, 180, 0, 0.45);
+  background: rgba(255, 244, 212, 0.9);
+}
+.bookmark-range-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 7px;
+}
+.bookmark-range-label input {
+  width: 13px;
+  height: 13px;
+}
 
 .chat-flash { max-width: 900px; width: 100%; margin: 10px auto 0; padding: 0 12px; }
 
@@ -222,6 +262,72 @@ body {
   padding: 0 12px;
   color: rgba(11, 18, 32, 0.75);
   font-size: 12px;
+}
+
+.chat-bookmark-panel {
+  max-width: 900px;
+  width: 100%;
+  margin: 10px auto 0;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-bookmark-range-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+}
+.chat-bookmark-title {
+  max-width: 260px;
+  margin: 0;
+  padding: 8px 10px;
+}
+.chat-bookmark-range-form .btn {
+  margin: 0;
+}
+.chat-bookmark-range-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.chat-bookmark-list {
+  display: flex;
+  gap: 8px;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+.chat-bookmark-item {
+  min-width: 220px;
+  max-width: 280px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chat-bookmark-item.is-selected {
+  border-color: rgba(33, 92, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(33, 92, 255, 0.1);
+}
+.chat-bookmark-link {
+  text-decoration: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.chat-bookmark-link:hover {
+  color: var(--accent);
+}
+.chat-bookmark-meta {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .hl {
@@ -237,6 +343,11 @@ body {
   padding: 12px;
 }
 .txt-row { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.txt-row-bookmark-highlight {
+  background: rgba(33, 92, 255, 0.1);
+  border-radius: 8px;
+  padding: 2px 6px;
+}
 
 .diary {
   flex: 1;
@@ -664,3 +775,4 @@ body {
   .memory-thumb img { height: 240px; }
   .todo-form-row { flex-direction: column; align-items: stretch; }
 }
+

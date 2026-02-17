@@ -41,6 +41,17 @@
             {% endfor %}
           </select>
         </div>
+        <div class="jump">
+          <label class="me-label">책갈피 이동</label>
+          <select class="select" id="jump-bookmark">
+            <option value="">(선택)</option>
+            {% for b in bookmarks or [] %}
+              <option value="{{ url_for('index', view='txt', bookmark=b.id) }}" {% if bookmark_selected_id == b.id %}selected{% endif %}>
+                {{ b.display_title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </header>
 
@@ -58,12 +69,25 @@
       <div class="search-banner">“{{ search_query }}” 검색 결과: {{ search_count or 0 }}건</div>
     {% endif %}
 
+    {% if bookmarks %}
+      <section class="chat-bookmark-panel">
+        <div class="chat-bookmark-list">
+          {% for b in bookmarks %}
+            <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}">
+              <a class="chat-bookmark-link" href="{{ url_for('index', view='txt', bookmark=b.id) }}">{{ b.display_title }}</a>
+              <div class="chat-bookmark-meta">{{ b.display_range }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
     <main class="chat" id="chat-scroll">
       <div class="txt-log">
         {% for d in days or [] %}
           <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
           {% for m in d.messages %}
-            <div class="txt-row">[{{ m.sender }}] [{{ m.time_ko }}] {{ m.text_html }}</div>
+            <div class="txt-row {% if m.is_bookmark_highlight %}txt-row-bookmark-highlight{% endif %}" id="msg-{{ m.id }}">[{{ m.sender }}] [{{ m.time_ko }}] {{ m.text_html }}</div>
           {% endfor %}
         {% endfor %}
       </div>
@@ -79,8 +103,22 @@
             if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
           });
         }
+        var bookmarkSel = document.getElementById("jump-bookmark");
+        if (bookmarkSel) {
+          bookmarkSel.addEventListener("change", function () {
+            if (!bookmarkSel.value) return;
+            location.href = bookmarkSel.value;
+          });
+        }
         var chat = document.getElementById("chat-scroll");
-        if (chat && !location.hash) {
+        var targetMessageId = {{ bookmark_target_message_id | tojson }};
+        if (targetMessageId) {
+          var target = document.getElementById("msg-" + targetMessageId);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+        if (chat && !location.hash && !targetMessageId) {
           chat.scrollTop = chat.scrollHeight;
         }
       })();

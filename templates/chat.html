@@ -50,6 +50,17 @@
             {% endfor %}
           </select>
         </div>
+        <div class="jump">
+          <label class="me-label">책갈피 이동</label>
+          <select class="select" id="jump-bookmark">
+            <option value="">(선택)</option>
+            {% for b in bookmarks or [] %}
+              <option value="{{ url_for('index', view='chat', bookmark=b.id) }}" {% if bookmark_selected_id == b.id %}selected{% endif %}>
+                {{ b.display_title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </header>
 
@@ -67,12 +78,41 @@
       <div class="search-banner">“{{ search_query }}” 검색 결과: {{ search_count or 0 }}건</div>
     {% endif %}
 
+    <section class="chat-bookmark-panel">
+      <form class="chat-bookmark-range-form" id="bookmark-range-form" method="post" action="{{ url_for('chat_bookmark_add') }}">
+        <input type="hidden" name="view" value="chat" />
+        <input type="hidden" name="q" value="{{ search_query or '' }}" />
+        <input type="hidden" name="start_message_id" id="bookmark-start" />
+        <input type="hidden" name="end_message_id" id="bookmark-end" />
+        <input class="input chat-bookmark-title" type="text" name="title" placeholder="범위 책갈피 이름 (선택)" />
+        <button class="btn btn-secondary" type="submit">선택 범위 책갈피 저장</button>
+        <span class="chat-bookmark-range-status" id="bookmark-range-status">메시지 2개를 체크하면 범위 저장 가능</span>
+      </form>
+
+      {% if bookmarks %}
+        <div class="chat-bookmark-list">
+          {% for b in bookmarks %}
+            <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}">
+              <a class="chat-bookmark-link" href="{{ url_for('index', view='chat', bookmark=b.id) }}">{{ b.display_title }}</a>
+              <div class="chat-bookmark-meta">{{ b.display_range }}</div>
+              <form method="post" action="{{ url_for('chat_bookmark_delete', bookmark_id=b.id) }}">
+                <input type="hidden" name="view" value="chat" />
+                <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                <input type="hidden" name="bookmark" value="{{ bookmark_selected_id or '' }}" />
+                <button class="link-button" type="submit">삭제</button>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
     <main class="chat" id="chat-scroll">
       {% for d in days or [] %}
         <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
         {% for m in d.messages %}
           {% set is_me = (me_name and m.sender == me_name) %}
-          <div class="msg-row {{ 'me' if is_me else 'other' }}">
+          <div class="msg-row {{ 'me' if is_me else 'other' }} {% if m.is_bookmark_highlight %}msg-bookmark-highlight{% endif %}" id="msg-{{ m.id }}" data-msg-seq="{{ m.seq }}">
             {% if is_me %}
               <div class="time">{{ m.time_ko }}</div>
               <div class="bubble bubble-me">{{ m.text_html }}</div>
@@ -83,6 +123,20 @@
               </div>
               <div class="time">{{ m.time_ko }}</div>
             {% endif %}
+            <div class="msg-bookmark-tools {{ 'me' if is_me else 'other' }}">
+              <form method="post" action="{{ url_for('chat_bookmark_add') }}">
+                <input type="hidden" name="view" value="chat" />
+                <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                <input type="hidden" name="message_id" value="{{ m.id }}" />
+                <button class="bookmark-btn {% if m.is_bookmark_start %}is-active{% endif %}" type="submit" title="이 메시지를 책갈피로 저장">
+                  {% if m.is_bookmark_start %}★{% else %}☆{% endif %}
+                </button>
+              </form>
+              <label class="bookmark-range-label">
+                <input class="bookmark-range-check" type="checkbox" value="{{ m.id }}" />
+                범위
+              </label>
+            </div>
           </div>
         {% endfor %}
       {% endfor %}
@@ -98,9 +152,73 @@
             if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
           });
         }
+
+        var bookmarkSel = document.getElementById("jump-bookmark");
+        if (bookmarkSel) {
+          bookmarkSel.addEventListener("change", function () {
+            if (!bookmarkSel.value) return;
+            location.href = bookmarkSel.value;
+          });
+        }
+
+        var rangeChecks = Array.prototype.slice.call(document.querySelectorAll(".bookmark-range-check"));
+        var rangeStart = document.getElementById("bookmark-start");
+        var rangeEnd = document.getElementById("bookmark-end");
+        var rangeStatus = document.getElementById("bookmark-range-status");
+
+        function selectedRangeChecks() {
+          return rangeChecks.filter(function (item) { return item.checked; });
+        }
+
+        function refreshRangeSelection() {
+          if (!rangeStart || !rangeEnd || !rangeStatus) return;
+          var selected = selectedRangeChecks();
+          if (selected.length === 2) {
+            selected.sort(function (a, b) {
+              var rowA = a.closest(".msg-row");
+              var rowB = b.closest(".msg-row");
+              return Number(rowA ? rowA.dataset.msgSeq : 0) - Number(rowB ? rowB.dataset.msgSeq : 0);
+            });
+            rangeStart.value = selected[0].value;
+            rangeEnd.value = selected[1].value;
+            rangeStatus.textContent = "선택 완료: " + selected[0].value + " ~ " + selected[1].value;
+            return;
+          }
+          rangeStart.value = "";
+          rangeEnd.value = "";
+          rangeStatus.textContent = "메시지 2개를 체크하면 범위 저장 가능";
+        }
+
+        rangeChecks.forEach(function (item) {
+          item.addEventListener("change", function () {
+            if (selectedRangeChecks().length > 2) {
+              item.checked = false;
+            }
+            refreshRangeSelection();
+          });
+        });
+
+        var rangeForm = document.getElementById("bookmark-range-form");
+        if (rangeForm) {
+          rangeForm.addEventListener("submit", function (ev) {
+            if (!rangeStart || !rangeEnd || !rangeStart.value || !rangeEnd.value) {
+              ev.preventDefault();
+              alert("범위 책갈피는 메시지 2개를 체크해 주세요.");
+            }
+          });
+        }
+        refreshRangeSelection();
+
         var chat = document.getElementById("chat-scroll");
+        var targetMessageId = {{ bookmark_target_message_id | tojson }};
+        if (targetMessageId) {
+          var target = document.getElementById("msg-" + targetMessageId);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
         var searching = {{ 'true' if search_query else 'false' }};
-        if (chat && !location.hash && !searching) {
+        if (chat && !location.hash && !searching && !targetMessageId) {
           chat.scrollTop = chat.scrollHeight;
         }
       })();

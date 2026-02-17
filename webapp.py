@@ -53,8 +53,10 @@ from export_utils import (
 )
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
+    add_chat_bookmark,
     add_diary_entry,
     add_diary_comment,
+    delete_chat_bookmark,
     delete_diary_entry,
     delete_diary_comment,
     delete_diary_photo,
@@ -65,6 +67,7 @@ from storage import (
     fetch_diary_comments,
     fetch_diary_entries,
     fetch_diary_photos,
+    fetch_chat_bookmarks,
     fetch_messages,
     fetch_memory_albums,
     fetch_memory_photos,
@@ -72,6 +75,7 @@ from storage import (
     fetch_senders,
     get_diary_entry,
     get_diary_photo,
+    get_chat_bookmark,
     import_messages,
     import_messages_canonicalized,
     get_memory_photo,
@@ -245,6 +249,19 @@ def _memories_redirect_args(form) -> dict[str, str]:
     return args
 
 
+def _chat_redirect_args(values) -> dict[str, str]:
+    args: dict[str, str] = {}
+    view = (values.get("view") or "chat").strip().lower()
+    args["view"] = view if view in ("chat", "txt") else "chat"
+    q = (values.get("q") or "").strip()
+    if q:
+        args["q"] = q
+    bookmark = (values.get("bookmark") or "").strip()
+    if bookmark.isdigit():
+        args["bookmark"] = bookmark
+    return args
+
+
 def _split_tags(tags: str) -> list[str]:
     raw = (tags or "").strip()
     if not raw:
@@ -400,6 +417,8 @@ def create_app() -> Flask:
         if view not in ("chat", "txt"):
             view = "chat"
         q = (request.args.get("q") or "").strip()
+        bookmark_raw = (request.args.get("bookmark") or "").strip()
+        bookmark_selected_id = int(bookmark_raw) if bookmark_raw.isdigit() else None
 
         @dataclass
         class DayGroup:
@@ -412,9 +431,55 @@ def create_app() -> Flask:
             raw_messages = search_messages(DB_PATH, q, limit=5000)
         else:
             raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
+
+        bookmark_items = fetch_chat_bookmarks(DB_PATH, limit=500)
+        for bookmark in bookmark_items:
+            start_stamp = str(bookmark.get("start_dt") or "").replace("T", " ")[:16]
+            end_stamp = str(bookmark.get("end_dt") or "").replace("T", " ")[:16]
+            is_range = bool(bookmark.get("end_message_id"))
+            title = str(bookmark.get("title") or "").strip()
+            bookmark["is_range"] = is_range
+            bookmark["display_title"] = title or ("범위 책갈피" if is_range else "책갈피")
+            bookmark["display_range"] = f"{start_stamp} ~ {end_stamp}" if is_range else start_stamp
+            bookmark["id"] = int(bookmark["id"])
+            bookmark["start_message_id"] = int(bookmark["start_message_id"])
+
+        selected_bookmark = None
+        if bookmark_selected_id is not None:
+            selected_bookmark = next(
+                (item for item in bookmark_items if int(item["id"]) == bookmark_selected_id),
+                None,
+            )
+            if not selected_bookmark:
+                selected_bookmark = get_chat_bookmark(DB_PATH, bookmark_selected_id)
+                if selected_bookmark:
+                    selected_bookmark["id"] = int(selected_bookmark["id"])
+                    selected_bookmark["start_message_id"] = int(selected_bookmark["start_message_id"])
+
+        bookmark_target_message_id: int | None = None
+        bookmark_highlight_ids: set[int] = set()
+        if selected_bookmark:
+            bookmark_target_message_id = int(selected_bookmark["start_message_id"])
+            selected_end_raw = selected_bookmark.get("end_message_id")
+            if selected_end_raw:
+                selected_end_id = int(selected_end_raw)
+                idx_by_message_id = {int(msg["id"]): idx for idx, msg in enumerate(raw_messages)}
+                start_idx = idx_by_message_id.get(bookmark_target_message_id)
+                end_idx = idx_by_message_id.get(selected_end_id)
+                if start_idx is not None and end_idx is not None:
+                    lo, hi = sorted((start_idx, end_idx))
+                    for idx in range(lo, hi + 1):
+                        bookmark_highlight_ids.add(int(raw_messages[idx]["id"]))
+                else:
+                    bookmark_highlight_ids.add(bookmark_target_message_id)
+            else:
+                bookmark_highlight_ids.add(bookmark_target_message_id)
+
+        bookmark_start_ids = {int(item["start_message_id"]) for item in bookmark_items}
+
         days: list[DayGroup] = []
         current: DayGroup | None = None
-        for m in raw_messages:
+        for idx, m in enumerate(raw_messages):
             dt = datetime.fromisoformat(m["dt"])
             date_key = dt.strftime("%Y-%m-%d")
             weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][dt.weekday()]
@@ -423,10 +488,14 @@ def create_app() -> Flask:
             h12 = dt.hour % 12 or 12
             time_ko = f"{ampm} {h12}:{dt.minute:02d}"
 
+            message_id = int(m["id"])
             m["date_key"] = date_key
             m["date_ko"] = date_ko
             m["time_ko"] = time_ko
+            m["seq"] = idx
             m["text_html"] = _highlight_html(m["text"], q if q else None)
+            m["is_bookmark_start"] = message_id in bookmark_start_ids
+            m["is_bookmark_highlight"] = message_id in bookmark_highlight_ids
 
             if current is None or current.date_key != date_key:
                 current = DayGroup(date_key=date_key, date_ko=date_ko, messages=[])
@@ -443,7 +512,57 @@ def create_app() -> Flask:
             view=view,
             search_query=q,
             search_count=len(raw_messages),
+            bookmarks=bookmark_items,
+            bookmark_selected_id=bookmark_selected_id,
+            bookmark_target_message_id=bookmark_target_message_id,
         )
+
+    @app.post("/chat/bookmarks")
+    def chat_bookmark_add():
+        _require_login()
+        message_id_raw = (request.form.get("message_id") or "").strip()
+        start_message_id_raw = (request.form.get("start_message_id") or "").strip()
+        end_message_id_raw = (request.form.get("end_message_id") or "").strip()
+        title = (request.form.get("title") or "").strip()
+
+        start_message_id: int | None = None
+        end_message_id: int | None = None
+        if message_id_raw.isdigit():
+            start_message_id = int(message_id_raw)
+        elif start_message_id_raw.isdigit() and end_message_id_raw.isdigit():
+            start_message_id = int(start_message_id_raw)
+            end_message_id = int(end_message_id_raw)
+        else:
+            flash("책갈피로 저장할 메시지를 선택해 주세요.", "error")
+            return redirect(url_for("index", **_chat_redirect_args(request.form)))
+
+        created_id = add_chat_bookmark(
+            DB_PATH,
+            start_message_id=start_message_id,
+            end_message_id=end_message_id,
+            title=title,
+        )
+        if not created_id:
+            flash("책갈피 저장에 실패했습니다. (메시지를 찾지 못함)", "error")
+            return redirect(url_for("index", **_chat_redirect_args(request.form)))
+
+        args = _chat_redirect_args(request.form)
+        args["bookmark"] = str(created_id)
+        flash("책갈피를 저장했습니다.", "ok")
+        return redirect(url_for("index", **args))
+
+    @app.post("/chat/bookmarks/<int:bookmark_id>/delete")
+    def chat_bookmark_delete(bookmark_id: int):
+        _require_login()
+        deleted = delete_chat_bookmark(DB_PATH, bookmark_id)
+        if deleted:
+            flash("책갈피를 삭제했습니다.", "ok")
+        else:
+            flash("삭제할 책갈피를 찾지 못했습니다.", "error")
+        args = _chat_redirect_args(request.form)
+        if args.get("bookmark") == str(bookmark_id):
+            args.pop("bookmark", None)
+        return redirect(url_for("index", **args))
 
     @app.get("/diary")
     def diary():
