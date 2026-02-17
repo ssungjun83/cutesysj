@@ -75,6 +75,7 @@ from storage import (
     fetch_todo_items,
     fetch_senders,
     get_latest_dt,
+    get_oldest_dt,
     get_diary_entry,
     get_diary_photo,
     get_chat_bookmark,
@@ -215,6 +216,68 @@ def _format_entry_time(value: str) -> str:
     if parsed.tzinfo:
         parsed = parsed.astimezone(SEOUL_TZ)
     return parsed.strftime("%H:%M")
+
+
+@dataclass
+class ChatDayGroup:
+    date_key: str
+    date_ko: str
+    messages: list[dict]
+
+
+def _decorate_chat_messages(raw_messages: list[dict], *, search_term: str | None = None) -> list[dict]:
+    messages: list[dict] = []
+    for idx, raw in enumerate(raw_messages):
+        message = dict(raw)
+        dt = datetime.fromisoformat(str(message["dt"]))
+        date_key = dt.strftime("%Y-%m-%d")
+        message["date_key"] = date_key
+        message["date_ko"] = _format_ko_date(dt.date())
+        ampm = "오전" if dt.hour < 12 else "오후"
+        hour12 = dt.hour % 12 or 12
+        message["time_ko"] = f"{ampm} {hour12}:{dt.minute:02d}"
+        message["seq"] = idx
+        message["text_html"] = _highlight_html(str(message.get("text") or ""), search_term if search_term else None)
+        messages.append(message)
+    return messages
+
+
+def _group_chat_days(messages: list[dict]) -> list[ChatDayGroup]:
+    days: list[ChatDayGroup] = []
+    current: ChatDayGroup | None = None
+    for message in messages:
+        date_key = str(message["date_key"])
+        date_ko = str(message["date_ko"])
+        if current is None or current.date_key != date_key:
+            current = ChatDayGroup(date_key=date_key, date_ko=date_ko, messages=[])
+            days.append(current)
+        current.messages.append(message)
+    return days
+
+
+def _serialize_chat_days(days: list[ChatDayGroup], *, me_name: str | None = None) -> list[dict]:
+    serialized: list[dict] = []
+    me = (me_name or "").strip()
+    for day in days:
+        item = {
+            "date_key": day.date_key,
+            "date_ko": day.date_ko,
+            "messages": [],
+        }
+        for message in day.messages:
+            sender = str(message.get("sender") or "")
+            item["messages"].append(
+                {
+                    "id": int(message["id"]),
+                    "dt": str(message.get("dt") or ""),
+                    "sender": sender,
+                    "text": str(message.get("text") or ""),
+                    "time_ko": str(message.get("time_ko") or ""),
+                    "is_me": bool(me and sender == me),
+                }
+            )
+        serialized.append(item)
+    return serialized
 
 
 def _diary_redirect_args(form) -> dict[str, str]:
@@ -429,12 +492,6 @@ def create_app() -> Flask:
         if focus_date_raw and not requested_focus_date:
             flash("조회 날짜 형식이 올바르지 않습니다.", "error")
 
-        @dataclass
-        class DayGroup:
-            date_key: str
-            date_ko: str
-            messages: list[dict]
-
         me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
         bookmark_items = fetch_chat_bookmarks(DB_PATH, limit=None)
         for bookmark in bookmark_items:
@@ -468,19 +525,30 @@ def create_app() -> Flask:
             if start_dt_text:
                 bookmark_focus_date = _parse_iso_date(start_dt_text[:10])
 
+        chunk_days = 3
         loaded_start_date = ""
         loaded_end_date = ""
+        oldest_date_value = ""
+        latest_date_value = ""
         focus_date_value = ""
         if q:
             raw_messages = search_messages(DB_PATH, q, limit=5000)
         else:
+            oldest_dt = get_oldest_dt(DB_PATH)
             latest_dt = get_latest_dt(DB_PATH)
+            oldest_focus_date = _parse_iso_date(str(oldest_dt)[:10]) if oldest_dt else None
             latest_focus_date = _parse_iso_date(str(latest_dt)[:10]) if latest_dt else None
+            oldest_date_value = oldest_focus_date.isoformat() if oldest_focus_date else ""
+            latest_date_value = latest_focus_date.isoformat() if latest_focus_date else ""
             focus_date = bookmark_focus_date or requested_focus_date or latest_focus_date
             if focus_date:
                 focus_date_value = focus_date.isoformat()
-                window_start = focus_date - timedelta(days=3)
-                window_end = focus_date + timedelta(days=3)
+                window_start = focus_date - timedelta(days=chunk_days)
+                window_end = focus_date + timedelta(days=chunk_days)
+                if oldest_focus_date and window_start < oldest_focus_date:
+                    window_start = oldest_focus_date
+                if latest_focus_date and window_end > latest_focus_date:
+                    window_end = latest_focus_date
                 loaded_start_date = window_start.isoformat()
                 loaded_end_date = window_end.isoformat()
                 raw_messages = fetch_messages_between(
@@ -493,27 +561,8 @@ def create_app() -> Flask:
             else:
                 raw_messages = []
 
-        days: list[DayGroup] = []
-        current: DayGroup | None = None
-        for idx, m in enumerate(raw_messages):
-            dt = datetime.fromisoformat(m["dt"])
-            date_key = dt.strftime("%Y-%m-%d")
-            weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][dt.weekday()]
-            date_ko = f"{dt.year}년 {dt.month}월 {dt.day}일 {weekday_ko}"
-            ampm = "오전" if dt.hour < 12 else "오후"
-            h12 = dt.hour % 12 or 12
-            time_ko = f"{ampm} {h12}:{dt.minute:02d}"
-
-            m["date_key"] = date_key
-            m["date_ko"] = date_ko
-            m["time_ko"] = time_ko
-            m["seq"] = idx
-            m["text_html"] = _highlight_html(m["text"], q if q else None)
-
-            if current is None or current.date_key != date_key:
-                current = DayGroup(date_key=date_key, date_ko=date_ko, messages=[])
-                days.append(current)
-            current.messages.append(m)
+        decorated_messages = _decorate_chat_messages(raw_messages, search_term=q if q else None)
+        days = _group_chat_days(decorated_messages)
 
         template = "chat_txt.html" if view == "txt" else "chat.html"
         senders = fetch_senders(DB_PATH, limit=80)
@@ -531,7 +580,49 @@ def create_app() -> Flask:
             focus_date=focus_date_value,
             loaded_start_date=loaded_start_date,
             loaded_end_date=loaded_end_date,
+            oldest_date=oldest_date_value,
+            latest_date=latest_date_value,
+            window_chunk_days=chunk_days,
+            chat_window_api=url_for("chat_window"),
         )
+
+    @app.get("/chat/window")
+    def chat_window():
+        _require_login()
+        start_date_raw = (request.args.get("start_date") or "").strip()
+        end_date_raw = (request.args.get("end_date") or "").strip()
+        start_date = _parse_iso_date(start_date_raw)
+        end_date = _parse_iso_date(end_date_raw)
+        if not start_date or not end_date:
+            return {
+                "ok": False,
+                "error": "시작/종료 날짜가 필요합니다.",
+            }, 400
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+        if (end_date - start_date).days > 20:
+            return {
+                "ok": False,
+                "error": "조회 범위가 너무 큽니다.",
+            }, 400
+
+        raw_messages = fetch_messages_between(
+            DB_PATH,
+            start_dt=f"{start_date.isoformat()}T00:00:00",
+            end_dt=f"{end_date.isoformat()}T23:59:59",
+            order="asc",
+            limit=1500,
+        )
+        me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
+        messages = _decorate_chat_messages(raw_messages, search_term=None)
+        days = _group_chat_days(messages)
+        return {
+            "ok": True,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "count": len(messages),
+            "days": _serialize_chat_days(days, me_name=me_name),
+        }
 
     @app.post("/chat/bookmarks")
     def chat_bookmark_add():

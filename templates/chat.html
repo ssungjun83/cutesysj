@@ -69,22 +69,24 @@
     <div class="chat-main-wrap">
       <main class="chat" id="chat-scroll">
         {% for d in days or [] %}
-          <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
-          {% for m in d.messages %}
-            {% set is_me = (me_name and m.sender == me_name) %}
-            <div class="msg-row msg-selectable {{ 'me' if is_me else 'other' }}" id="msg-{{ m.id }}" data-msg-id="{{ m.id }}" data-msg-seq="{{ m.seq }}">
-              {% if is_me %}
-                <div class="time">{{ m.time_ko }}</div>
-                <div class="bubble bubble-me">{{ m.text_html }}</div>
-              {% else %}
-                <div class="msg-col">
-                  <div class="sender">{{ m.sender }}</div>
-                  <div class="bubble bubble-other">{{ m.text_html }}</div>
-                </div>
-                <div class="time">{{ m.time_ko }}</div>
-              {% endif %}
-            </div>
-          {% endfor %}
+          <section class="chat-day" data-date-key="{{ d.date_key }}">
+            <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
+            {% for m in d.messages %}
+              {% set is_me = (me_name and m.sender == me_name) %}
+              <div class="msg-row msg-selectable {{ 'me' if is_me else 'other' }}" id="msg-{{ m.id }}" data-msg-id="{{ m.id }}" data-msg-dt="{{ m.dt }}" data-date-key="{{ d.date_key }}">
+                {% if is_me %}
+                  <div class="time">{{ m.time_ko }}</div>
+                  <div class="bubble bubble-me">{{ m.text_html }}</div>
+                {% else %}
+                  <div class="msg-col">
+                    <div class="sender">{{ m.sender }}</div>
+                    <div class="bubble bubble-other">{{ m.text_html }}</div>
+                  </div>
+                  <div class="time">{{ m.time_ko }}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </section>
         {% endfor %}
       </main>
 
@@ -108,7 +110,7 @@
           메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
         </div>
         {% if loaded_start_date and loaded_end_date %}
-          <div class="chat-bookmark-load-range">현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}</div>
+          <div class="chat-bookmark-load-range" id="chat-load-range">현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}</div>
         {% endif %}
         {% if bookmarks %}
           <div class="chat-bookmark-list-vertical">
@@ -135,27 +137,121 @@
 
     <script>
       (function () {
+        var chat = document.getElementById("chat-scroll");
         var saveForm = document.getElementById("bookmark-save-form");
         var messageIdInput = document.getElementById("bookmark-message-id");
         var startInput = document.getElementById("bookmark-start");
         var endInput = document.getElementById("bookmark-end");
         var statusEl = document.getElementById("bookmark-status");
-        var selectRows = Array.prototype.slice.call(document.querySelectorAll(".msg-selectable"));
-        var selectedRows = [];
+        var loadRangeEl = document.getElementById("chat-load-range");
+        var openSidebarBtn = document.getElementById("bookmark-sidebar-open");
+        var closeSidebarBtn = document.getElementById("bookmark-sidebar-close");
+        var sidebarBackdrop = document.getElementById("bookmark-sidebar-backdrop");
+        var singleBtn = document.getElementById("bookmark-save-single");
+        var rangeBtn = document.getElementById("bookmark-save-range");
+        var clearBtn = document.getElementById("bookmark-clear-selection");
 
-        function getMsgSeq(row) {
-          return Number(row.getAttribute("data-msg-seq") || "0");
+        var selectedRows = [];
+        var searching = {{ 'true' if search_query else 'false' }};
+        var meName = {{ (me_name or '') | tojson }};
+        var chunkDays = Number({{ window_chunk_days | tojson }}) || 3;
+        var chatWindowApi = {{ chat_window_api | tojson }};
+        var loadedStartDate = {{ loaded_start_date | tojson }};
+        var loadedEndDate = {{ loaded_end_date | tojson }};
+        var oldestDate = {{ oldest_date | tojson }};
+        var latestDate = {{ latest_date | tojson }};
+        var loadingPrev = false;
+        var loadingNext = false;
+        var hasMorePrev = true;
+        var hasMoreNext = true;
+
+        function listSelectableRows() {
+          if (!chat) return [];
+          return Array.prototype.slice.call(chat.querySelectorAll(".msg-selectable"));
         }
 
         function getMsgId(row) {
           return String(row.getAttribute("data-msg-id") || "");
         }
 
+        function getMsgDt(row) {
+          return String(row.getAttribute("data-msg-dt") || "");
+        }
+
+        function compareRows(a, b) {
+          var aDt = getMsgDt(a);
+          var bDt = getMsgDt(b);
+          if (aDt < bDt) return -1;
+          if (aDt > bDt) return 1;
+          return Number(getMsgId(a)) - Number(getMsgId(b));
+        }
+
+        function parseIsoDate(value) {
+          var text = String(value || "");
+          var parts = text.split("-");
+          if (parts.length !== 3) return null;
+          var y = Number(parts[0]);
+          var m = Number(parts[1]) - 1;
+          var d = Number(parts[2]);
+          if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+          return new Date(Date.UTC(y, m, d));
+        }
+
+        function formatIsoDate(dt) {
+          if (!dt) return "";
+          var y = dt.getUTCFullYear();
+          var m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+          var d = String(dt.getUTCDate()).padStart(2, "0");
+          return y + "-" + m + "-" + d;
+        }
+
+        function addDays(dateText, days) {
+          var dt = parseIsoDate(dateText);
+          if (!dt) return "";
+          dt.setUTCDate(dt.getUTCDate() + days);
+          return formatIsoDate(dt);
+        }
+
+        function compareDate(a, b) {
+          if (!a || !b) return 0;
+          if (a < b) return -1;
+          if (a > b) return 1;
+          return 0;
+        }
+
+        function escapeHtml(text) {
+          return String(text || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function textToHtml(text) {
+          return escapeHtml(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n/g, "<br>");
+        }
+
+        function updateLoadRangeText() {
+          if (!loadRangeEl) return;
+          if (loadedStartDate && loadedEndDate) {
+            loadRangeEl.textContent = "현재 로딩 범위: " + loadedStartDate + " ~ " + loadedEndDate;
+          }
+        }
+
+        function pruneDetachedSelection() {
+          selectedRows = selectedRows.filter(function (row) {
+            return Boolean(row && row.isConnected);
+          });
+        }
+
         function updateSelectionUI() {
-          selectRows.forEach(function (row) {
+          var rows = listSelectableRows();
+          rows.forEach(function (row) {
             row.classList.remove("msg-selected");
             row.classList.remove("msg-selected-end");
           });
+          pruneDetachedSelection();
           selectedRows.forEach(function (row, idx) {
             row.classList.add("msg-selected");
             if (idx === 1) row.classList.add("msg-selected-end");
@@ -176,17 +272,16 @@
             statusEl.textContent = "단건 저장 준비: 메시지 " + messageIdInput.value;
             return;
           }
-
-          var ordered = selectedRows.slice().sort(function (a, b) {
-            return getMsgSeq(a) - getMsgSeq(b);
-          });
+          var ordered = selectedRows.slice().sort(compareRows);
           startInput.value = getMsgId(ordered[0]);
           endInput.value = getMsgId(ordered[1]);
           statusEl.textContent = "범위 저장 준비: " + startInput.value + " ~ " + endInput.value;
         }
 
-        selectRows.forEach(function (row) {
-          row.addEventListener("click", function () {
+        if (chat) {
+          chat.addEventListener("click", function (event) {
+            var row = event.target.closest(".msg-selectable");
+            if (!row || !chat.contains(row)) return;
             var existingIdx = selectedRows.indexOf(row);
             if (existingIdx >= 0) {
               selectedRows.splice(existingIdx, 1);
@@ -201,11 +296,7 @@
             selectedRows.push(row);
             updateSelectionUI();
           });
-        });
-
-        var singleBtn = document.getElementById("bookmark-save-single");
-        var rangeBtn = document.getElementById("bookmark-save-range");
-        var clearBtn = document.getElementById("bookmark-clear-selection");
+        }
 
         if (singleBtn) {
           singleBtn.addEventListener("click", function () {
@@ -239,12 +330,6 @@
           });
         }
 
-        updateSelectionUI();
-
-        var openSidebarBtn = document.getElementById("bookmark-sidebar-open");
-        var closeSidebarBtn = document.getElementById("bookmark-sidebar-close");
-        var sidebarBackdrop = document.getElementById("bookmark-sidebar-backdrop");
-
         function setSidebarOpen(isOpen) {
           document.body.classList.toggle("bookmark-sidebar-open", Boolean(isOpen));
         }
@@ -268,7 +353,257 @@
           if (event.key === "Escape") setSidebarOpen(false);
         });
 
-        var chat = document.getElementById("chat-scroll");
+        function createMessageNode(message, dateKey) {
+          var row = document.createElement("div");
+          var isMe = Boolean(message.is_me || (meName && message.sender === meName));
+          row.className = "msg-row msg-selectable " + (isMe ? "me" : "other");
+          row.id = "msg-" + String(message.id);
+          row.setAttribute("data-msg-id", String(message.id));
+          row.setAttribute("data-msg-dt", String(message.dt || ""));
+          row.setAttribute("data-date-key", String(dateKey || ""));
+
+          if (isMe) {
+            var meTime = document.createElement("div");
+            meTime.className = "time";
+            meTime.textContent = String(message.time_ko || "");
+            var meBubble = document.createElement("div");
+            meBubble.className = "bubble bubble-me";
+            meBubble.innerHTML = textToHtml(message.text || "");
+            row.appendChild(meTime);
+            row.appendChild(meBubble);
+            return row;
+          }
+
+          var msgCol = document.createElement("div");
+          msgCol.className = "msg-col";
+          var sender = document.createElement("div");
+          sender.className = "sender";
+          sender.textContent = String(message.sender || "");
+          var bubble = document.createElement("div");
+          bubble.className = "bubble bubble-other";
+          bubble.innerHTML = textToHtml(message.text || "");
+          msgCol.appendChild(sender);
+          msgCol.appendChild(bubble);
+
+          var otherTime = document.createElement("div");
+          otherTime.className = "time";
+          otherTime.textContent = String(message.time_ko || "");
+
+          row.appendChild(msgCol);
+          row.appendChild(otherTime);
+          return row;
+        }
+
+        function createDaySection(day) {
+          var section = document.createElement("section");
+          section.className = "chat-day";
+          section.setAttribute("data-date-key", String(day.date_key || ""));
+
+          var sep = document.createElement("div");
+          sep.className = "day-sep";
+          sep.id = "day-" + String(day.date_key || "");
+          sep.textContent = "--------------- " + String(day.date_ko || day.date_key || "") + " ---------------";
+          section.appendChild(sep);
+
+          var messages = Array.isArray(day.messages) ? day.messages : [];
+          messages.forEach(function (message) {
+            section.appendChild(createMessageNode(message, day.date_key || ""));
+          });
+          return section;
+        }
+
+        function prependDays(days) {
+          if (!chat || !days || !days.length) return;
+          var beforeHeight = chat.scrollHeight;
+          var frag = document.createDocumentFragment();
+          days.forEach(function (day) {
+            frag.appendChild(createDaySection(day));
+          });
+          chat.insertBefore(frag, chat.firstChild);
+          var delta = chat.scrollHeight - beforeHeight;
+          chat.scrollTop += delta;
+        }
+
+        function appendDays(days) {
+          if (!chat || !days || !days.length) return;
+          var frag = document.createDocumentFragment();
+          days.forEach(function (day) {
+            frag.appendChild(createDaySection(day));
+          });
+          chat.appendChild(frag);
+        }
+
+        function refreshLoadedRangeFromDom() {
+          if (!chat) return;
+          var dayNodes = chat.querySelectorAll(".chat-day");
+          if (!dayNodes.length) return;
+          loadedStartDate = String(dayNodes[0].getAttribute("data-date-key") || loadedStartDate || "");
+          loadedEndDate = String(dayNodes[dayNodes.length - 1].getAttribute("data-date-key") || loadedEndDate || "");
+          updateLoadRangeText();
+        }
+
+        function getCenterDateKey() {
+          if (!chat) return "";
+          var rows = listSelectableRows();
+          if (!rows.length) {
+            var firstDay = chat.querySelector(".chat-day");
+            return firstDay ? String(firstDay.getAttribute("data-date-key") || "") : "";
+          }
+          var midY = chat.getBoundingClientRect().top + chat.clientHeight / 2;
+          var bestRow = rows[0];
+          var bestDist = Infinity;
+          rows.forEach(function (row) {
+            var rect = row.getBoundingClientRect();
+            var center = (rect.top + rect.bottom) / 2;
+            var dist = Math.abs(center - midY);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestRow = row;
+            }
+          });
+          return String(bestRow.getAttribute("data-date-key") || "");
+        }
+
+        function pruneFarDays() {
+          if (!chat || searching) return;
+          var centerDate = getCenterDateKey();
+          if (!centerDate) return;
+          var keepStart = addDays(centerDate, -chunkDays);
+          var keepEnd = addDays(centerDate, chunkDays);
+          if (!keepStart || !keepEnd) return;
+
+          var removedTopHeight = 0;
+          Array.prototype.slice.call(chat.querySelectorAll(".chat-day")).forEach(function (dayNode) {
+            var dayKey = String(dayNode.getAttribute("data-date-key") || "");
+            if (!dayKey) return;
+            if (compareDate(dayKey, keepStart) < 0) {
+              removedTopHeight += dayNode.offsetHeight;
+              dayNode.remove();
+              return;
+            }
+            if (compareDate(dayKey, keepEnd) > 0) {
+              dayNode.remove();
+            }
+          });
+
+          if (removedTopHeight > 0) {
+            chat.scrollTop = Math.max(0, chat.scrollTop - removedTopHeight);
+          }
+          refreshLoadedRangeFromDom();
+          updateSelectionUI();
+        }
+
+        function fetchWindow(startDate, endDate) {
+          var url = new URL(chatWindowApi, window.location.origin);
+          url.searchParams.set("start_date", startDate);
+          url.searchParams.set("end_date", endDate);
+          return fetch(url.toString(), { credentials: "same-origin" }).then(function (response) {
+            if (!response.ok) throw new Error("window fetch failed");
+            return response.json();
+          });
+        }
+
+        function loadPrevWindow() {
+          if (!chat || searching || loadingPrev || !hasMorePrev || !loadedStartDate || !chatWindowApi) {
+            return Promise.resolve();
+          }
+          var requestEnd = addDays(loadedStartDate, -1);
+          var requestStart = addDays(requestEnd, -(chunkDays - 1));
+          if (!requestStart || !requestEnd) return Promise.resolve();
+          if (oldestDate && compareDate(requestEnd, oldestDate) < 0) {
+            hasMorePrev = false;
+            return Promise.resolve();
+          }
+          if (oldestDate && compareDate(requestStart, oldestDate) < 0) {
+            requestStart = oldestDate;
+          }
+          if (compareDate(requestStart, requestEnd) > 0) {
+            hasMorePrev = false;
+            return Promise.resolve();
+          }
+          loadingPrev = true;
+          return fetchWindow(requestStart, requestEnd)
+            .then(function (payload) {
+              var days = (payload && payload.ok && Array.isArray(payload.days)) ? payload.days : [];
+              if (!days.length) {
+                hasMorePrev = false;
+                return;
+              }
+              prependDays(days);
+              refreshLoadedRangeFromDom();
+              pruneFarDays();
+            })
+            .catch(function () {
+              hasMorePrev = true;
+            })
+            .finally(function () {
+              loadingPrev = false;
+            });
+        }
+
+        function loadNextWindow() {
+          if (!chat || searching || loadingNext || !hasMoreNext || !loadedEndDate || !chatWindowApi) {
+            return Promise.resolve();
+          }
+          var requestStart = addDays(loadedEndDate, 1);
+          var requestEnd = addDays(requestStart, chunkDays - 1);
+          if (!requestStart || !requestEnd) return Promise.resolve();
+          if (latestDate && compareDate(requestStart, latestDate) > 0) {
+            hasMoreNext = false;
+            return Promise.resolve();
+          }
+          if (latestDate && compareDate(requestEnd, latestDate) > 0) {
+            requestEnd = latestDate;
+          }
+          if (compareDate(requestStart, requestEnd) > 0) {
+            hasMoreNext = false;
+            return Promise.resolve();
+          }
+          loadingNext = true;
+          return fetchWindow(requestStart, requestEnd)
+            .then(function (payload) {
+              var days = (payload && payload.ok && Array.isArray(payload.days)) ? payload.days : [];
+              if (!days.length) {
+                hasMoreNext = false;
+                return;
+              }
+              appendDays(days);
+              refreshLoadedRangeFromDom();
+              pruneFarDays();
+            })
+            .catch(function () {
+              hasMoreNext = true;
+            })
+            .finally(function () {
+              loadingNext = false;
+            });
+        }
+
+        function maybeLoadByScroll() {
+          if (!chat || searching) return;
+          var topGap = chat.scrollTop;
+          var bottomGap = chat.scrollHeight - chat.clientHeight - chat.scrollTop;
+          if (topGap < 260) {
+            loadPrevWindow();
+          }
+          if (bottomGap < 260) {
+            loadNextWindow();
+          }
+        }
+
+        var scrollTicking = false;
+        function scheduleScrollCheck() {
+          if (scrollTicking) return;
+          scrollTicking = true;
+          window.requestAnimationFrame(function () {
+            scrollTicking = false;
+            maybeLoadByScroll();
+          });
+        }
+
+        updateSelectionUI();
+        updateLoadRangeText();
+
         var targetMessageId = {{ bookmark_target_message_id | tojson }};
         if (targetMessageId) {
           var target = document.getElementById("msg-" + targetMessageId);
@@ -277,9 +612,15 @@
             target.scrollIntoView({ behavior: "smooth", block: "center" });
           }
         }
-        var searching = {{ 'true' if search_query else 'false' }};
+
         if (chat && !location.hash && !searching && !targetMessageId) {
           chat.scrollTop = chat.scrollHeight;
+        }
+
+        if (chat && !searching) {
+          chat.addEventListener("scroll", scheduleScrollCheck);
+          window.addEventListener("resize", scheduleScrollCheck);
+          setTimeout(scheduleScrollCheck, 80);
         }
       })();
     </script>

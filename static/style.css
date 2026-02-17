@@ -193,6 +193,9 @@ body {
   font-size: 12px;
   margin: 16px 0 10px;
 }
+.chat-day {
+  display: block;
+}
 
 .msg-row {
   display: flex;
