@@ -158,6 +158,8 @@
         var chatWindowApi = {{ chat_window_api | tojson }};
         var loadedStartDate = {{ loaded_start_date | tojson }};
         var loadedEndDate = {{ loaded_end_date | tojson }};
+        var fetchCursorStartDate = loadedStartDate;
+        var fetchCursorEndDate = loadedEndDate;
         var oldestDate = {{ oldest_date | tojson }};
         var latestDate = {{ latest_date | tojson }};
         var loadingPrev = false;
@@ -217,6 +219,11 @@
           if (a < b) return -1;
           if (a > b) return 1;
           return 0;
+        }
+
+        function syncHasMoreFlags() {
+          hasMorePrev = !oldestDate || !fetchCursorStartDate || compareDate(fetchCursorStartDate, oldestDate) > 0;
+          hasMoreNext = !latestDate || !fetchCursorEndDate || compareDate(fetchCursorEndDate, latestDate) < 0;
         }
 
         function escapeHtml(text) {
@@ -504,10 +511,10 @@
         }
 
         function loadPrevWindow() {
-          if (!chat || searching || loadingPrev || !hasMorePrev || !loadedStartDate || !chatWindowApi) {
+          if (!chat || searching || loadingPrev || !hasMorePrev || !fetchCursorStartDate || !chatWindowApi) {
             return Promise.resolve();
           }
-          var requestEnd = addDays(loadedStartDate, -1);
+          var requestEnd = addDays(fetchCursorStartDate, -1);
           var requestStart = addDays(requestEnd, -(chunkDays - 1));
           if (!requestStart || !requestEnd) return Promise.resolve();
           if (oldestDate && compareDate(requestEnd, oldestDate) < 0) {
@@ -524,9 +531,10 @@
           loadingPrev = true;
           return fetchWindow(requestStart, requestEnd)
             .then(function (payload) {
+              fetchCursorStartDate = requestStart;
+              syncHasMoreFlags();
               var days = (payload && payload.ok && Array.isArray(payload.days)) ? payload.days : [];
               if (!days.length) {
-                hasMorePrev = false;
                 return;
               }
               prependDays(days);
@@ -538,14 +546,15 @@
             })
             .finally(function () {
               loadingPrev = false;
+              scheduleScrollCheck();
             });
         }
 
         function loadNextWindow() {
-          if (!chat || searching || loadingNext || !hasMoreNext || !loadedEndDate || !chatWindowApi) {
+          if (!chat || searching || loadingNext || !hasMoreNext || !fetchCursorEndDate || !chatWindowApi) {
             return Promise.resolve();
           }
-          var requestStart = addDays(loadedEndDate, 1);
+          var requestStart = addDays(fetchCursorEndDate, 1);
           var requestEnd = addDays(requestStart, chunkDays - 1);
           if (!requestStart || !requestEnd) return Promise.resolve();
           if (latestDate && compareDate(requestStart, latestDate) > 0) {
@@ -562,9 +571,10 @@
           loadingNext = true;
           return fetchWindow(requestStart, requestEnd)
             .then(function (payload) {
+              fetchCursorEndDate = requestEnd;
+              syncHasMoreFlags();
               var days = (payload && payload.ok && Array.isArray(payload.days)) ? payload.days : [];
               if (!days.length) {
-                hasMoreNext = false;
                 return;
               }
               appendDays(days);
@@ -576,6 +586,7 @@
             })
             .finally(function () {
               loadingNext = false;
+              scheduleScrollCheck();
             });
         }
 
@@ -602,6 +613,7 @@
         }
 
         updateSelectionUI();
+        syncHasMoreFlags();
         updateLoadRangeText();
 
         var targetMessageId = {{ bookmark_target_message_id | tojson }};
