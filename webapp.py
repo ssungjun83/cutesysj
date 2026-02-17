@@ -89,6 +89,7 @@ from storage import (
     serialize_diary_markdown,
     serialize_diary_plain,
     update_diary_entry,
+    update_chat_bookmark_title,
     upsert_diary_comment,
     upsert_diary_entry,
     migrate_diary_timezone_seoul,
@@ -622,25 +623,15 @@ def create_app() -> Flask:
     def chat_bookmark_add():
         _require_login()
         message_id_raw = (request.form.get("message_id") or "").strip()
-        start_message_id_raw = (request.form.get("start_message_id") or "").strip()
-        end_message_id_raw = (request.form.get("end_message_id") or "").strip()
         title = (request.form.get("title") or "").strip()
 
-        start_message_id: int | None = None
-        end_message_id: int | None = None
-        if message_id_raw.isdigit():
-            start_message_id = int(message_id_raw)
-        elif start_message_id_raw.isdigit() and end_message_id_raw.isdigit():
-            start_message_id = int(start_message_id_raw)
-            end_message_id = int(end_message_id_raw)
-        else:
+        if not message_id_raw.isdigit():
             flash("책갈피로 저장할 메시지를 선택해 주세요.", "error")
             return redirect(url_for("index", **_chat_redirect_args(request.form)))
 
         created_id = add_chat_bookmark(
             DB_PATH,
-            start_message_id=start_message_id,
-            end_message_id=end_message_id,
+            start_message_id=int(message_id_raw),
             title=title,
         )
         if not created_id:
@@ -650,6 +641,22 @@ def create_app() -> Flask:
         args = _chat_redirect_args(request.form)
         args["bookmark"] = str(created_id)
         flash("책갈피를 저장했습니다.", "ok")
+        return redirect(url_for("index", **args))
+
+    @app.post("/chat/bookmarks/<int:bookmark_id>/rename")
+    def chat_bookmark_rename(bookmark_id: int):
+        _require_login()
+        title = (request.form.get("title") or "").strip()
+        if not title:
+            flash("책갈피 이름을 입력해 주세요.", "error")
+            return redirect(url_for("index", **_chat_redirect_args(request.form)))
+        updated = update_chat_bookmark_title(DB_PATH, bookmark_id, title)
+        if updated:
+            flash("책갈피 이름을 변경했습니다.", "ok")
+        else:
+            flash("책갈피 이름 변경에 실패했습니다.", "error")
+        args = _chat_redirect_args(request.form)
+        args["bookmark"] = str(bookmark_id)
         return redirect(url_for("index", **args))
 
     @app.post("/chat/bookmarks/<int:bookmark_id>/delete")

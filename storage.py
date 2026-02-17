@@ -603,6 +603,20 @@ def delete_chat_bookmark(db_path: Path, bookmark_id: int) -> bool:
         return cur.rowcount == 1
 
 
+def update_chat_bookmark_title(db_path: Path, bookmark_id: int, title: str) -> bool:
+    init_db(db_path)
+    title_value = (title or "").strip()
+    if not title_value:
+        return False
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE chat_bookmarks SET title = ? WHERE id = ?",
+            (title_value, int(bookmark_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
 def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> int:
     init_db(db_path)
     created_at = _now_seoul_timestamp()

@@ -100,14 +100,11 @@
           <input type="hidden" name="q" value="{{ search_query or '' }}" />
           <input type="hidden" name="date" value="{{ focus_date or '' }}" />
           <input type="hidden" name="message_id" id="bookmark-message-id" />
-          <input type="hidden" name="start_message_id" id="bookmark-start" />
-          <input type="hidden" name="end_message_id" id="bookmark-end" />
-          <button class="btn btn-secondary" type="button" id="bookmark-save-single">선택 1개 저장</button>
-          <button class="btn btn-secondary" type="button" id="bookmark-save-range">선택 범위 저장</button>
+          <button class="btn btn-secondary" type="button" id="bookmark-save-single">책갈피 저장</button>
           <button class="btn btn-secondary" type="button" id="bookmark-clear-selection">선택 해제</button>
         </form>
-        <div class="chat-bookmark-status" id="bookmark-status" data-default="메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택">
-          메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
+        <div class="chat-bookmark-status" id="bookmark-status" data-default="메시지를 클릭해서 1개 선택 후 저장">
+          메시지를 클릭해서 1개 선택 후 저장
         </div>
         {% if loaded_start_date and loaded_end_date %}
           <div class="chat-bookmark-load-range" id="chat-load-range">현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}</div>
@@ -118,6 +115,13 @@
               <div class="chat-bookmark-item {% if bookmark_selected_id == b.id %}is-selected{% endif %}">
                 <a class="chat-bookmark-link" href="{{ url_for('index', view='chat', q=search_query, bookmark=b.id) }}">{{ b.display_title }}</a>
                 <div class="chat-bookmark-meta">{{ b.display_range }}</div>
+                <form class="chat-bookmark-rename-form" method="post" action="{{ url_for('chat_bookmark_rename', bookmark_id=b.id) }}">
+                  <input type="hidden" name="view" value="chat" />
+                  <input type="hidden" name="q" value="{{ search_query or '' }}" />
+                  <input type="hidden" name="date" value="{{ focus_date or '' }}" />
+                  <input class="input chat-bookmark-rename-input" type="text" name="title" value="{{ b.display_title }}" maxlength="80" />
+                  <button class="btn btn-secondary chat-bookmark-rename-btn" type="submit">이름 변경</button>
+                </form>
                 <form method="post" action="{{ url_for('chat_bookmark_delete', bookmark_id=b.id) }}">
                   <input type="hidden" name="view" value="chat" />
                   <input type="hidden" name="q" value="{{ search_query or '' }}" />
@@ -140,15 +144,12 @@
         var chat = document.getElementById("chat-scroll");
         var saveForm = document.getElementById("bookmark-save-form");
         var messageIdInput = document.getElementById("bookmark-message-id");
-        var startInput = document.getElementById("bookmark-start");
-        var endInput = document.getElementById("bookmark-end");
         var statusEl = document.getElementById("bookmark-status");
         var loadRangeEl = document.getElementById("chat-load-range");
         var openSidebarBtn = document.getElementById("bookmark-sidebar-open");
         var closeSidebarBtn = document.getElementById("bookmark-sidebar-close");
         var sidebarBackdrop = document.getElementById("bookmark-sidebar-backdrop");
         var singleBtn = document.getElementById("bookmark-save-single");
-        var rangeBtn = document.getElementById("bookmark-save-range");
         var clearBtn = document.getElementById("bookmark-clear-selection");
 
         var selectedRows = [];
@@ -174,18 +175,6 @@
 
         function getMsgId(row) {
           return String(row.getAttribute("data-msg-id") || "");
-        }
-
-        function getMsgDt(row) {
-          return String(row.getAttribute("data-msg-dt") || "");
-        }
-
-        function compareRows(a, b) {
-          var aDt = getMsgDt(a);
-          var bDt = getMsgDt(b);
-          if (aDt < bDt) return -1;
-          if (aDt > bDt) return 1;
-          return Number(getMsgId(a)) - Number(getMsgId(b));
         }
 
         function parseIsoDate(value) {
@@ -259,33 +248,22 @@
           var rows = listSelectableRows();
           rows.forEach(function (row) {
             row.classList.remove("msg-selected");
-            row.classList.remove("msg-selected-end");
           });
           pruneDetachedSelection();
-          selectedRows.forEach(function (row, idx) {
+          selectedRows.forEach(function (row) {
             row.classList.add("msg-selected");
-            if (idx === 1) row.classList.add("msg-selected-end");
           });
 
-          if (!messageIdInput || !startInput || !endInput || !statusEl) return;
+          if (!messageIdInput || !statusEl) return;
           messageIdInput.value = "";
-          startInput.value = "";
-          endInput.value = "";
 
-          var prefix = statusEl.getAttribute("data-default") || "메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택";
+          var prefix = statusEl.getAttribute("data-default") || "메시지를 클릭해서 1개 선택 후 저장";
           if (selectedRows.length === 0) {
             statusEl.textContent = prefix;
             return;
           }
-          if (selectedRows.length === 1) {
-            messageIdInput.value = getMsgId(selectedRows[0]);
-            statusEl.textContent = "단건 저장 준비: 메시지 " + messageIdInput.value;
-            return;
-          }
-          var ordered = selectedRows.slice().sort(compareRows);
-          startInput.value = getMsgId(ordered[0]);
-          endInput.value = getMsgId(ordered[1]);
-          statusEl.textContent = "범위 저장 준비: " + startInput.value + " ~ " + endInput.value;
+          messageIdInput.value = getMsgId(selectedRows[0]);
+          statusEl.textContent = "저장 준비: 메시지 " + messageIdInput.value;
         }
 
         if (chat) {
@@ -298,12 +276,7 @@
               updateSelectionUI();
               return;
             }
-            if (selectedRows.length >= 2) {
-              selectedRows = [row];
-              updateSelectionUI();
-              return;
-            }
-            selectedRows.push(row);
+            selectedRows = [row];
             updateSelectionUI();
           });
         }
@@ -312,23 +285,9 @@
           singleBtn.addEventListener("click", function () {
             if (!saveForm || !messageIdInput) return;
             if (!messageIdInput.value) {
-              alert("단건 저장은 메시지 1개를 선택해 주세요.");
+              alert("메시지 1개를 선택해 주세요.");
               return;
             }
-            startInput.value = "";
-            endInput.value = "";
-            saveForm.submit();
-          });
-        }
-
-        if (rangeBtn) {
-          rangeBtn.addEventListener("click", function () {
-            if (!saveForm || !startInput || !endInput) return;
-            if (!startInput.value || !endInput.value) {
-              alert("범위 저장은 메시지 2개를 선택해 주세요.");
-              return;
-            }
-            messageIdInput.value = "";
             saveForm.submit();
           });
         }
