@@ -369,6 +369,64 @@ def fetch_messages(
     return items
 
 
+def fetch_messages_between(
+    db_path: Path,
+    *,
+    start_dt: str | None = None,
+    end_dt: str | None = None,
+    order: str = "asc",
+    limit: int | None = None,
+) -> list[dict]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        params: list[object] = []
+        conditions: list[str] = []
+        if start_dt:
+            conditions.append("dt >= ?")
+            params.append(start_dt)
+        if end_dt:
+            conditions.append("dt <= ?")
+            params.append(end_dt)
+        where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        order_sql = "ASC" if order.lower() == "asc" else "DESC"
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
+        rows = conn.execute(
+            f"""
+            SELECT id, dt, sender, text, source, imported_at
+            FROM messages
+            {where_sql}
+            ORDER BY dt {order_sql}, id {order_sql}
+            {limit_sql}
+            """,
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def fetch_message_dates(db_path: Path, *, limit: int | None = None) -> list[str]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        params: list[object] = []
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT substr(dt, 1, 10) AS date_key
+            FROM messages
+            ORDER BY date_key DESC
+            {limit_sql}
+            """,
+            params,
+        ).fetchall()
+    return [str(row[0]) for row in rows if row and row[0]]
+
+
 def fetch_senders(db_path: Path, limit: int = 50) -> list[dict]:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:

@@ -68,11 +68,14 @@ from storage import (
     fetch_diary_entries,
     fetch_diary_photos,
     fetch_chat_bookmarks,
+    fetch_message_dates,
     fetch_messages,
+    fetch_messages_between,
     fetch_memory_albums,
     fetch_memory_photos,
     fetch_todo_items,
     fetch_senders,
+    get_latest_dt,
     get_diary_entry,
     get_diary_photo,
     get_chat_bookmark,
@@ -259,6 +262,9 @@ def _chat_redirect_args(values) -> dict[str, str]:
     bookmark = (values.get("bookmark") or "").strip()
     if bookmark.isdigit():
         args["bookmark"] = bookmark
+    focus_date = (values.get("date") or "").strip()
+    if focus_date:
+        args["date"] = focus_date
     return args
 
 
@@ -419,6 +425,10 @@ def create_app() -> Flask:
         q = (request.args.get("q") or "").strip()
         bookmark_raw = (request.args.get("bookmark") or "").strip()
         bookmark_selected_id = int(bookmark_raw) if bookmark_raw.isdigit() else None
+        focus_date_raw = (request.args.get("date") or "").strip()
+        requested_focus_date = _parse_iso_date(focus_date_raw)
+        if focus_date_raw and not requested_focus_date:
+            flash("조회 날짜 형식이 올바르지 않습니다.", "error")
 
         @dataclass
         class DayGroup:
@@ -427,11 +437,6 @@ def create_app() -> Flask:
             messages: list[dict]
 
         me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
-        if q:
-            raw_messages = search_messages(DB_PATH, q, limit=5000)
-        else:
-            raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
-
         bookmark_items = fetch_chat_bookmarks(DB_PATH, limit=200)
         for bookmark in bookmark_items:
             start_stamp = str(bookmark.get("start_dt") or "").replace("T", " ")[:16]
@@ -457,8 +462,47 @@ def create_app() -> Flask:
                     selected_bookmark["start_message_id"] = int(selected_bookmark["start_message_id"])
 
         bookmark_target_message_id: int | None = None
+        bookmark_focus_date: date | None = None
         if selected_bookmark:
             bookmark_target_message_id = int(selected_bookmark["start_message_id"])
+            start_dt_text = str(selected_bookmark.get("start_dt") or "")
+            if start_dt_text:
+                bookmark_focus_date = _parse_iso_date(start_dt_text[:10])
+
+        loaded_start_date = ""
+        loaded_end_date = ""
+        focus_date_value = ""
+        if q:
+            raw_messages = search_messages(DB_PATH, q, limit=5000)
+        else:
+            latest_dt = get_latest_dt(DB_PATH)
+            latest_focus_date = _parse_iso_date(str(latest_dt)[:10]) if latest_dt else None
+            focus_date = requested_focus_date or bookmark_focus_date or latest_focus_date
+            if focus_date:
+                focus_date_value = focus_date.isoformat()
+                window_start = focus_date - timedelta(days=7)
+                window_end = focus_date + timedelta(days=7)
+                loaded_start_date = window_start.isoformat()
+                loaded_end_date = window_end.isoformat()
+                raw_messages = fetch_messages_between(
+                    DB_PATH,
+                    start_dt=f"{window_start.isoformat()}T00:00:00",
+                    end_dt=f"{window_end.isoformat()}T23:59:59",
+                    order="asc",
+                    limit=2500,
+                )
+            else:
+                raw_messages = []
+
+        available_date_keys = fetch_message_dates(DB_PATH, limit=5000)
+        available_dates: list[dict[str, str]] = []
+        for key in available_date_keys:
+            parsed = _parse_iso_date(key)
+            if parsed:
+                label = _format_ko_date(parsed)
+            else:
+                label = key
+            available_dates.append({"key": key, "label": label})
 
         days: list[DayGroup] = []
         current: DayGroup | None = None
@@ -495,6 +539,10 @@ def create_app() -> Flask:
             bookmarks=bookmark_items,
             bookmark_selected_id=bookmark_selected_id,
             bookmark_target_message_id=bookmark_target_message_id,
+            available_dates=available_dates,
+            focus_date=focus_date_value,
+            loaded_start_date=loaded_start_date,
+            loaded_end_date=loaded_end_date,
         )
 
     @app.post("/chat/bookmarks")

@@ -36,8 +36,8 @@
           <label class="me-label">날짜 이동</label>
           <select class="select" id="jump-day">
             <option value="">(선택)</option>
-            {% for d in days or [] %}
-              <option value="day-{{ d.date_key }}">{{ d.date_ko }}</option>
+            {% for d in available_dates or [] %}
+              <option value="{{ url_for('index', view='txt', date=d.key, q=search_query) }}" {% if focus_date == d.key %}selected{% endif %}>{{ d.label }}</option>
             {% endfor %}
           </select>
         </div>
@@ -85,9 +85,9 @@
         var sel = document.getElementById("jump-day");
         if (sel) {
           sel.addEventListener("change", function () {
-            if (!sel.value) return;
-            var el = document.getElementById(sel.value);
-            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            var url = sel.value;
+            if (!url) return;
+            location.href = url;
           });
         }
         var bookmarkSel = document.getElementById("jump-bookmark");

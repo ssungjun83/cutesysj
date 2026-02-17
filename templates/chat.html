@@ -45,8 +45,8 @@
           <label class="me-label">날짜 이동</label>
           <select class="select" id="jump-day">
             <option value="">(선택)</option>
-            {% for d in days or [] %}
-              <option value="day-{{ d.date_key }}">{{ d.date_ko }}</option>
+            {% for d in available_dates or [] %}
+              <option value="{{ url_for('index', view='chat', date=d.key, q=search_query) }}" {% if focus_date == d.key %}selected{% endif %}>{{ d.label }}</option>
             {% endfor %}
           </select>
         </div>
@@ -83,6 +83,7 @@
         <form id="bookmark-save-form" class="chat-bookmark-save-form" method="post" action="{{ url_for('chat_bookmark_add') }}">
           <input type="hidden" name="view" value="chat" />
           <input type="hidden" name="q" value="{{ search_query or '' }}" />
+          <input type="hidden" name="date" value="{{ focus_date or '' }}" />
           <input type="hidden" name="message_id" id="bookmark-message-id" />
           <input type="hidden" name="start_message_id" id="bookmark-start" />
           <input type="hidden" name="end_message_id" id="bookmark-end" />
@@ -95,11 +96,17 @@
         <form id="bookmark-delete-form" method="post">
           <input type="hidden" name="view" value="chat" />
           <input type="hidden" name="q" value="{{ search_query or '' }}" />
+          <input type="hidden" name="date" value="{{ focus_date or '' }}" />
           <input type="hidden" name="bookmark" id="bookmark-delete-id" value="{{ bookmark_selected_id or '' }}" />
           <button class="btn btn-secondary" type="submit" id="bookmark-delete-btn">선택 책갈피 삭제</button>
         </form>
       </div>
-      <div class="chat-bookmark-status" id="bookmark-status">메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택</div>
+      <div class="chat-bookmark-status" id="bookmark-status">
+        메시지를 클릭해서 1개(단건) 또는 2개(범위) 선택
+        {% if loaded_start_date and loaded_end_date %}
+          · 현재 로딩 범위: {{ loaded_start_date }} ~ {{ loaded_end_date }}
+        {% endif %}
+      </div>
     </section>
 
     <main class="chat" id="chat-scroll">
@@ -128,9 +135,9 @@
         var daySel = document.getElementById("jump-day");
         if (daySel) {
           daySel.addEventListener("change", function () {
-            if (!daySel.value) return;
-            var el = document.getElementById(daySel.value);
-            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            var url = daySel.value;
+            if (!url) return;
+            location.href = url;
           });
         }
 
