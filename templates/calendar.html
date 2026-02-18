@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>달력</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page calendar-page">
+    <header class="topbar">
+      <div class="topbar-title">달력</div>
+      <nav class="topbar-actions">
+        <div class="nav-tabs">
+          <a class="tab" href="{{ url_for('diary') }}">일기</a>
+          <a class="tab is-active" href="{{ url_for('calendar') }}">달력</a>
+          <a class="tab" href="{{ url_for('index', view='chat') }}">대화</a>
+          <a class="tab" href="{{ url_for('todo') }}">함께할일</a>
+          <a class="tab" href="{{ url_for('memories') }}">추억</a>
+        </div>
+        <div class="nav-links">
+          <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+          <a class="link" href="{{ url_for('admin_export') }}">내보내기</a>
+          <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        </div>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main class="calendar">
+      <section class="calendar-panel">
+        <div class="calendar-head">
+          <div class="calendar-title">{{ month_label }}</div>
+          <div class="calendar-nav">
+            <a class="btn btn-secondary" href="{{ url_for('calendar', month=prev_month) }}">이전달</a>
+            <a class="btn btn-secondary" href="{{ url_for('calendar', month=today_month) }}">오늘</a>
+            <a class="btn btn-secondary" href="{{ url_for('calendar', month=next_month) }}">다음달</a>
+          </div>
+        </div>
+
+        <div class="calendar-grid">
+          {% for weekday in weekdays %}
+            <div class="calendar-weekday">{{ weekday }}</div>
+          {% endfor %}
+          {% for cell in cells %}
+            <div class="calendar-cell {% if cell.day %}has-day{% endif %} {% if cell.is_today %}is-today{% endif %}">
+              {% if cell.day %}
+                <div class="calendar-day">{{ cell.day }}</div>
+                {% if cell.entries %}
+                  <div class="calendar-entry-list">
+                    {% for entry in cell.entries %}
+                      <a
+                        class="calendar-entry-link"
+                        href="{{ url_for('diary', start_date=entry.entry_date, end_date=entry.entry_date) }}#entry-{{ entry.id }}"
+                        title="{{ entry.title }}"
+                      >{{ entry.title }}</a>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="calendar-empty-day"></div>
+                {% endif %}
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+    {% include "_auth_guard.html" %}
+  </body>
+</html>

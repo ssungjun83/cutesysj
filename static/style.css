@@ -436,6 +436,92 @@ body {
   padding: 2px 6px;
 }
 
+.calendar {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 12px 20px;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+.calendar-panel {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 6px 18px rgba(11, 18, 32, 0.06);
+}
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.calendar-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+.calendar-nav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.calendar-weekday {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+.calendar-cell {
+  min-height: 120px;
+  border: 1px solid rgba(11, 18, 32, 0.1);
+  border-radius: 12px;
+  background: rgba(248, 251, 255, 0.75);
+  padding: 8px;
+}
+.calendar-cell.has-day {
+  background: #ffffff;
+}
+.calendar-cell.is-today {
+  border-color: rgba(33, 92, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(33, 92, 255, 0.1);
+}
+.calendar-day {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.calendar-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.calendar-entry-link {
+  text-decoration: none;
+  color: var(--text);
+  font-size: 12px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: rgba(33, 92, 255, 0.08);
+  border: 1px solid rgba(33, 92, 255, 0.16);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-entry-link:hover {
+  color: var(--accent);
+  border-color: rgba(33, 92, 255, 0.32);
+}
+.calendar-empty-day {
+  min-height: 2px;
+}
+
 .diary {
   flex: 1;
   overflow: auto;
@@ -862,6 +948,42 @@ body {
 }
 
 @media (max-width: 860px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "title"
+      "tabs"
+      "links"
+      "tools";
+  }
+  .nav-tabs {
+    justify-self: start;
+    max-width: 100%;
+    overflow: auto;
+  }
+  .tab {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .nav-links,
+  .topbar-tools {
+    justify-self: start;
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .calendar-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .calendar-grid {
+    gap: 6px;
+  }
+  .calendar-cell {
+    min-height: 96px;
+    padding: 6px;
+  }
   .chat-main-wrap {
     grid-template-columns: 1fr;
   }

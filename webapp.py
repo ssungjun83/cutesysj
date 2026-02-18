@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import csv
+import calendar as pycalendar
 import re
 import secrets
 from datetime import date, datetime, timedelta
@@ -207,6 +208,27 @@ def _parse_iso_date(value: str) -> date | None:
     value = (value or "").strip()
     if not value:
         return None
+
+
+def _parse_year_month(value: str) -> tuple[int, int] | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    m = re.fullmatch(r"(\d{4})-(\d{2})", raw)
+    if not m:
+        return None
+    year = int(m.group(1))
+    month = int(m.group(2))
+    if month < 1 or month > 12:
+        return None
+    return year, month
+
+
+def _shift_year_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    idx = year * 12 + (month - 1) + delta
+    shifted_year = idx // 12
+    shifted_month = (idx % 12) + 1
+    return shifted_year, shifted_month
     try:
         return date.fromisoformat(value)
     except ValueError:
@@ -935,6 +957,76 @@ def create_app() -> Flask:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"diary_export_{stamp}.{ext}"
         return _download_response(content, content_type, filename)
+
+    @app.get("/calendar")
+    def calendar():
+        _require_login()
+        month_raw = (request.args.get("month") or "").strip()
+        parsed = _parse_year_month(month_raw)
+        today = _today_seoul_date()
+        if month_raw and not parsed:
+            flash("달력 월 형식이 올바르지 않습니다. (YYYY-MM)", "error")
+        if parsed:
+            year, month = parsed
+        else:
+            year, month = today.year, today.month
+
+        first_weekday_mon0, days_in_month = pycalendar.monthrange(year, month)
+        month_start = f"{year:04d}-{month:02d}-01"
+        month_end = f"{year:04d}-{month:02d}-{days_in_month:02d}"
+        entries = fetch_diary_entries(
+            DB_PATH,
+            limit=None,
+            start_date=month_start,
+            end_date=month_end,
+            order="asc",
+        )
+
+        entries_by_day: dict[int, list[dict]] = {}
+        for entry in entries:
+            entry_date_raw = str(entry.get("entry_date") or "")
+            entry_date = _parse_iso_date(entry_date_raw)
+            if not entry_date:
+                continue
+            day_items = entries_by_day.setdefault(entry_date.day, [])
+            day_items.append(
+                {
+                    "id": int(entry["id"]),
+                    "title": str(entry.get("title") or "무제"),
+                    "entry_date": entry_date.isoformat(),
+                }
+            )
+
+        # monthrange is Monday=0; calendar UI uses Sunday-first.
+        lead_blanks = (first_weekday_mon0 + 1) % 7
+        cells: list[dict] = []
+        for _ in range(lead_blanks):
+            cells.append({"day": None, "date_iso": "", "entries": []})
+        for day in range(1, days_in_month + 1):
+            date_iso = f"{year:04d}-{month:02d}-{day:02d}"
+            cells.append(
+                {
+                    "day": day,
+                    "date_iso": date_iso,
+                    "is_today": date_iso == today.isoformat(),
+                    "entries": entries_by_day.get(day, []),
+                }
+            )
+        while len(cells) % 7 != 0:
+            cells.append({"day": None, "date_iso": "", "entries": []})
+
+        prev_year, prev_month = _shift_year_month(year, month, -1)
+        next_year, next_month = _shift_year_month(year, month, 1)
+        return render_template(
+            "calendar.html",
+            current_month=f"{year:04d}-{month:02d}",
+            month_label=f"{year}년 {month}월",
+            prev_month=f"{prev_year:04d}-{prev_month:02d}",
+            next_month=f"{next_year:04d}-{next_month:02d}",
+            today_month=f"{today.year:04d}-{today.month:02d}",
+            cells=cells,
+            weekdays=["일", "월", "화", "수", "목", "금", "토"],
+        )
 
     @app.get("/todo")
     def todo():
