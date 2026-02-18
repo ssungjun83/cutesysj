@@ -972,21 +972,20 @@ def create_app() -> Flask:
             year, month = today.year, today.month
 
         first_weekday_mon0, days_in_month = pycalendar.monthrange(year, month)
-        month_start = f"{year:04d}-{month:02d}-01"
-        month_end = f"{year:04d}-{month:02d}-{days_in_month:02d}"
         entries = fetch_diary_entries(
             DB_PATH,
             limit=None,
-            start_date=month_start,
-            end_date=month_end,
             order="asc",
         )
 
         entries_by_day: dict[int, list[dict]] = {}
         for entry in entries:
             entry_date_raw = str(entry.get("entry_date") or "")
-            entry_date = _parse_iso_date(entry_date_raw)
+            # Keep calendar robust even when entry_date contains time text.
+            entry_date = _parse_iso_date(entry_date_raw[:10])
             if not entry_date:
+                continue
+            if entry_date.year != year or entry_date.month != month:
                 continue
             day_items = entries_by_day.setdefault(entry_date.day, [])
             day_items.append(
