@@ -208,6 +208,10 @@ def _parse_iso_date(value: str) -> date | None:
     value = (value or "").strip()
     if not value:
         return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _parse_year_month(value: str) -> tuple[int, int] | None:
@@ -229,10 +233,6 @@ def _shift_year_month(year: int, month: int, delta: int) -> tuple[int, int]:
     shifted_year = idx // 12
     shifted_month = (idx % 12) + 1
     return shifted_year, shifted_month
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 def _format_comment_ts(value: str) -> str:
@@ -267,6 +267,69 @@ def _parse_timestamp(value: str) -> datetime | None:
         return None
 
 
+_MSG_DATE_FALLBACK_RE = re.compile(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})")
+_MSG_TIME_FALLBACK_RE = re.compile(r"(\d{1,2}):(\d{2})")
+
+
+def _parse_message_datetime(value: str) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    parsed = _parse_timestamp(raw)
+    if parsed:
+        if parsed.tzinfo:
+            parsed = parsed.astimezone(SEOUL_TZ).replace(tzinfo=None)
+        return parsed
+    m = _MSG_DATE_FALLBACK_RE.search(raw)
+    if not m:
+        return None
+    year = int(m.group(1))
+    month = int(m.group(2))
+    day = int(m.group(3))
+    hour = 0
+    minute = 0
+    tm = _MSG_TIME_FALLBACK_RE.search(raw)
+    if tm:
+        hour = int(tm.group(1))
+        minute = int(tm.group(2))
+        if "오후" in raw and hour < 12:
+            hour += 12
+        if "오전" in raw and hour == 12:
+            hour = 0
+    try:
+        return datetime(year, month, day, hour, minute)
+    except ValueError:
+        return None
+
+
+def _fetch_messages_between_resilient(
+    *,
+    start_date: date,
+    end_date: date,
+) -> list[dict]:
+    rows = fetch_messages_between(
+        DB_PATH,
+        start_dt=start_date.isoformat(),
+        end_dt=f"{end_date.isoformat()}~",
+        order="asc",
+    )
+    if rows:
+        return rows
+    # Fallback for non-ISO dt text rows where SQL string range cannot match.
+    all_rows = fetch_messages(DB_PATH, limit=None, order="asc")
+    filtered: list[tuple[datetime, int, dict]] = []
+    for row in all_rows:
+        parsed = _parse_message_datetime(str(row.get("dt") or ""))
+        if not parsed:
+            continue
+        d = parsed.date()
+        if d < start_date or d > end_date:
+            continue
+        filtered.append((parsed, int(row.get("id") or 0), row))
+    filtered.sort(key=lambda item: (item[0], item[1]))
+    return [item[2] for item in filtered]
+
+
 def _format_entry_time(value: str) -> str:
     parsed = _parse_timestamp(value)
     if not parsed:
@@ -287,13 +350,19 @@ def _decorate_chat_messages(raw_messages: list[dict], *, search_term: str | None
     messages: list[dict] = []
     for idx, raw in enumerate(raw_messages):
         message = dict(raw)
-        dt = datetime.fromisoformat(str(message["dt"]))
-        date_key = dt.strftime("%Y-%m-%d")
-        message["date_key"] = date_key
-        message["date_ko"] = _format_ko_date(dt.date())
-        ampm = "오전" if dt.hour < 12 else "오후"
-        hour12 = dt.hour % 12 or 12
-        message["time_ko"] = f"{ampm} {hour12}:{dt.minute:02d}"
+        parsed_dt = _parse_message_datetime(str(message.get("dt") or ""))
+        if parsed_dt:
+            date_key = parsed_dt.strftime("%Y-%m-%d")
+            message["date_key"] = date_key
+            message["date_ko"] = _format_ko_date(parsed_dt.date())
+            ampm = "오전" if parsed_dt.hour < 12 else "오후"
+            hour12 = parsed_dt.hour % 12 or 12
+            message["time_ko"] = f"{ampm} {hour12}:{parsed_dt.minute:02d}"
+        else:
+            date_hint = str(message.get("dt") or "")[:10].strip() or "날짜 미상"
+            message["date_key"] = date_hint
+            message["date_ko"] = date_hint
+            message["time_ko"] = ""
         message["seq"] = idx
         message["text_html"] = _highlight_html(str(message.get("text") or ""), search_term if search_term else None)
         messages.append(message)
@@ -581,7 +650,11 @@ def create_app() -> Flask:
             bookmark_target_message_id = int(selected_bookmark["start_message_id"])
             start_dt_text = str(selected_bookmark.get("start_dt") or "")
             if start_dt_text:
-                bookmark_focus_date = _parse_iso_date(start_dt_text[:10])
+                parsed_bookmark_dt = _parse_message_datetime(start_dt_text)
+                if parsed_bookmark_dt:
+                    bookmark_focus_date = parsed_bookmark_dt.date()
+                else:
+                    bookmark_focus_date = _parse_iso_date(start_dt_text[:10])
 
         chunk_days = 3
         loaded_start_date = ""
@@ -594,8 +667,10 @@ def create_app() -> Flask:
         else:
             oldest_dt = get_oldest_dt(DB_PATH)
             latest_dt = get_latest_dt(DB_PATH)
-            oldest_focus_date = _parse_iso_date(str(oldest_dt)[:10]) if oldest_dt else None
-            latest_focus_date = _parse_iso_date(str(latest_dt)[:10]) if latest_dt else None
+            oldest_parsed = _parse_message_datetime(str(oldest_dt)) if oldest_dt else None
+            latest_parsed = _parse_message_datetime(str(latest_dt)) if latest_dt else None
+            oldest_focus_date = oldest_parsed.date() if oldest_parsed else (_parse_iso_date(str(oldest_dt)[:10]) if oldest_dt else None)
+            latest_focus_date = latest_parsed.date() if latest_parsed else (_parse_iso_date(str(latest_dt)[:10]) if latest_dt else None)
             oldest_date_value = oldest_focus_date.isoformat() if oldest_focus_date else ""
             latest_date_value = latest_focus_date.isoformat() if latest_focus_date else ""
             focus_date = bookmark_focus_date or requested_focus_date or latest_focus_date
@@ -605,11 +680,9 @@ def create_app() -> Flask:
                 window_end = focus_date + timedelta(days=chunk_days)
                 loaded_start_date = window_start.isoformat()
                 loaded_end_date = window_end.isoformat()
-                raw_messages = fetch_messages_between(
-                    DB_PATH,
-                    start_dt=window_start.isoformat(),
-                    end_dt=f"{window_end.isoformat()}~",
-                    order="asc",
+                raw_messages = _fetch_messages_between_resilient(
+                    start_date=window_start,
+                    end_date=window_end,
                 )
             else:
                 raw_messages = []
@@ -659,11 +732,9 @@ def create_app() -> Flask:
                 "error": "조회 범위가 너무 큽니다.",
             }, 400
 
-        raw_messages = fetch_messages_between(
-            DB_PATH,
-            start_dt=start_date.isoformat(),
-            end_dt=f"{end_date.isoformat()}~",
-            order="asc",
+        raw_messages = _fetch_messages_between_resilient(
+            start_date=start_date,
+            end_date=end_date,
         )
         me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
         messages = _decorate_chat_messages(raw_messages, search_term=None)
