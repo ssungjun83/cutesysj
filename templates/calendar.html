@@ -38,7 +38,10 @@
     <main class="calendar">
       <section class="calendar-panel">
         <div class="calendar-head">
-          <div class="calendar-title">{{ month_label }}</div>
+          <div class="calendar-title-wrap">
+            <div class="calendar-title">{{ month_label }}</div>
+            <div class="calendar-subtitle">이달 일기 {{ month_entry_count }}건</div>
+          </div>
           <div class="calendar-nav">
             <a class="btn btn-secondary" href="{{ url_for('calendar', month=prev_month) }}">이전달</a>
             <a class="btn btn-secondary" href="{{ url_for('calendar', month=today_month) }}">오늘</a>
@@ -46,30 +49,38 @@
           </div>
         </div>
 
-        <div class="calendar-grid">
-          {% for weekday in weekdays %}
-            <div class="calendar-weekday">{{ weekday }}</div>
-          {% endfor %}
-          {% for cell in cells %}
-            <div class="calendar-cell {% if cell.day %}has-day{% endif %} {% if cell.is_today %}is-today{% endif %}">
-              {% if cell.day %}
-                <div class="calendar-day">{{ cell.day }}</div>
-                {% if cell.entries %}
-                  <div class="calendar-entry-list">
-                    {% for entry in cell.entries %}
-                      <a
-                        class="calendar-entry-link"
-                        href="{{ url_for('diary', start_date=entry.entry_date, end_date=entry.entry_date) }}#entry-{{ entry.id }}"
-                        title="{{ entry.title }}"
-                      >{{ entry.title }}</a>
-                    {% endfor %}
+        <div class="calendar-grid-wrap">
+          <div class="calendar-grid">
+            {% for weekday in weekdays %}
+              <div class="calendar-weekday {% if loop.index0 == 0 %}is-sunday{% elif loop.index0 == 6 %}is-saturday{% endif %}">{{ weekday }}</div>
+            {% endfor %}
+            {% for cell in cells %}
+              {% set col = loop.index0 % 7 %}
+              <div class="calendar-cell {% if cell.day %}has-day{% endif %} {% if cell.is_today %}is-today{% endif %} {% if col == 0 %}is-sunday{% elif col == 6 %}is-saturday{% endif %}">
+                {% if cell.day %}
+                  <div class="calendar-day-row">
+                    <div class="calendar-day">{{ cell.day }}</div>
+                    {% if cell.entries %}
+                      <div class="calendar-count">{{ cell.entries|length }}</div>
+                    {% endif %}
                   </div>
-                {% else %}
-                  <div class="calendar-empty-day"></div>
+                  {% if cell.entries %}
+                    <div class="calendar-entry-list">
+                      {% for entry in cell.entries %}
+                        <a
+                          class="calendar-entry-link"
+                          href="{{ url_for('diary', start_date=entry.entry_date, end_date=entry.entry_date) }}#entry-{{ entry.id }}"
+                          title="{{ entry.title }}"
+                        >{{ entry.title }}</a>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="calendar-empty-day"></div>
+                  {% endif %}
                 {% endif %}
-              {% endif %}
-            </div>
-          {% endfor %}
+              </div>
+            {% endfor %}
+          </div>
         </div>
       </section>
     </main>

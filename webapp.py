@@ -995,6 +995,7 @@ def create_app() -> Flask:
                     "entry_date": entry_date.isoformat(),
                 }
             )
+        month_entry_count = sum(len(items) for items in entries_by_day.values())
 
         # monthrange is Monday=0; calendar UI uses Sunday-first.
         lead_blanks = (first_weekday_mon0 + 1) % 7
@@ -1025,6 +1026,7 @@ def create_app() -> Flask:
             today_month=f"{today.year:04d}-{today.month:02d}",
             cells=cells,
             weekdays=["일", "월", "화", "수", "목", "금", "토"],
+            month_entry_count=month_entry_count,
         )
 
     @app.get("/todo")
