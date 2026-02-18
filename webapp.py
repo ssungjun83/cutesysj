@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import csv
+import re
 import secrets
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
@@ -140,6 +141,40 @@ def _require_login() -> None:
 
 def _escape_with_br(text: str) -> Markup:
     return Markup(escape(text)).replace("\n", Markup("<br>"))
+
+
+_URL_RE = re.compile(r"https?://[^\s<]+", re.IGNORECASE)
+_URL_TRAILING_PUNCT = ".,!?;:)]}\"'"
+
+
+def _linkify_with_br(text: str) -> Markup:
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not raw:
+        return Markup("")
+    out: list[Markup] = []
+    last = 0
+    for match in _URL_RE.finditer(raw):
+        start, end = match.span()
+        out.append(escape(raw[last:start]))
+
+        token = match.group(0)
+        trimmed = token.rstrip(_URL_TRAILING_PUNCT)
+        trailing = token[len(trimmed) :]
+        if trimmed:
+            href = escape(trimmed)
+            out.append(
+                Markup(
+                    f"<a href=\"{href}\" target=\"_blank\" rel=\"noopener noreferrer nofollow ugc\">{href}</a>"
+                )
+            )
+        else:
+            out.append(escape(token))
+        if trailing:
+            out.append(escape(trailing))
+        last = end
+
+    out.append(escape(raw[last:]))
+    return Markup("").join(out).replace("\n", Markup("<br>"))
 
 
 def _highlight_html(text: str, term: str | None) -> Markup:
@@ -714,11 +749,11 @@ def create_app() -> Flask:
                 entry["date_ko"] = _format_ko_date(entry_date)
             except ValueError:
                 entry["date_ko"] = entry_date_raw
-            entry["body_html"] = _escape_with_br(str(entry["body"] or ""))
+            entry["body_html"] = _linkify_with_br(str(entry["body"] or ""))
             entry["time_ko"] = _format_entry_time(str(entry.get("created_at") or ""))
             comments = comments_by_entry.get(entry["id"], [])
             for comment in comments:
-                comment["body_html"] = _escape_with_br(str(comment.get("body") or ""))
+                comment["body_html"] = _linkify_with_br(str(comment.get("body") or ""))
                 comment["created_at_display"] = _format_comment_ts(str(comment.get("created_at") or ""))
             entry["comments"] = comments
             entry["photos"] = photos_by_entry.get(entry["id"], [])

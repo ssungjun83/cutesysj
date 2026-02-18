@@ -523,6 +523,12 @@ body {
 .diary-date { font-size: 12px; color: var(--muted); }
 .diary-title { font-weight: 500; }
 .diary-body { line-height: 1.8; font-size: 14px; }
+.diary-body a,
+.diary-comment-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
 .diary-item-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .diary-comments {
   margin-top: 12px;
