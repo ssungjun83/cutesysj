@@ -9,13 +9,13 @@
   <body class="page">
     <div class="card wide">
       <div class="row">
-        <h1 class="title">내보내기</h1>
-        <a class="link" href="{{ url_for('index') }}">← 대화로</a>
+        <h1 class="title">내보내기 / 백업</h1>
+        <a class="link" href="{{ url_for('index') }}">메인으로</a>
       </div>
-      <p class="sub">내보낸 파일은 가져오기 화면에서 다시 불러올 수 있습니다.</p>
+      <p class="sub">내보내기 파일 다운로드와 GitHub 자동 백업/복원을 한 곳에서 관리합니다.</p>
 
       <section class="export-section">
-        <h2 class="section-title">대화</h2>
+        <h2 class="section-title">대화 내보내기</h2>
         <div class="export-actions">
           <a class="btn-link" href="{{ url_for('admin_export_chat', format='txt') }}">TXT</a>
           <a class="btn-link" href="{{ url_for('admin_export_chat', format='kakao') }}">카카오 TXT</a>
@@ -24,7 +24,7 @@
       </section>
 
       <section class="export-section">
-        <h2 class="section-title">일기</h2>
+        <h2 class="section-title">일기 내보내기</h2>
         <div class="export-actions">
           <a class="btn-link" href="{{ url_for('diary_export', format='txt') }}">TXT</a>
           <a class="btn-link" href="{{ url_for('diary_export', format='csv') }}">CSV</a>
@@ -33,10 +33,23 @@
       </section>
 
       <section class="export-section">
-        <h2 class="section-title">추억(사진)</h2>
+        <h2 class="section-title">추억(사진) 내보내기</h2>
         <div class="export-actions">
           <a class="btn-link" href="{{ url_for('admin_export_memories', format='csv') }}">CSV</a>
           <a class="btn-link" href="{{ url_for('admin_export_memories', format='txt') }}">TXT</a>
+        </div>
+      </section>
+
+      <section class="export-section">
+        <h2 class="section-title">GitHub 백업</h2>
+        <p class="sub">자동 백업 파일: <code>&lt;CHAT_APP_GITHUB_BACKUP_PREFIX&gt;.txt</code>, <code>&lt;CHAT_APP_GITHUB_BACKUP_PREFIX&gt;_diary.txt</code></p>
+        <div class="export-actions">
+          <form method="post" action="{{ url_for('admin_backup_run') }}">
+            <button type="submit" class="btn-link">지금 백업 실행</button>
+          </form>
+          <form method="post" action="{{ url_for('admin_backup_restore') }}" onsubmit="return confirm('GitHub 백업 파일로 현재 DB를 복원합니다. 계속할까요?');">
+            <button type="submit" class="btn-link">GitHub 백업 복원</button>
+          </form>
         </div>
       </section>
     </div>

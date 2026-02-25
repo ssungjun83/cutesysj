@@ -4,11 +4,14 @@ import base64
 import csv
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -16,8 +19,6 @@ from storage import (
     fetch_diary_comments,
     fetch_diary_entries,
     fetch_messages,
-    serialize_diary_csv,
-    serialize_diary_markdown,
     serialize_diary_plain,
 )
 
@@ -112,6 +113,12 @@ class GitHubBackupConfig:
     prefix: str
 
 
+_PERIODIC_BACKUP_LOCK = threading.Lock()
+_PERIODIC_BACKUP_STARTED = False
+_LAST_BACKUP_SIGNATURE_LOCK = threading.Lock()
+_LAST_BACKUP_SIGNATURE: str | None = None
+
+
 def _get_backup_config(base_dir: Path) -> GitHubBackupConfig | None:
     token = os.getenv("CHAT_APP_GITHUB_TOKEN", "").strip().strip('"').strip("'")
     if not token:
@@ -175,7 +182,75 @@ def _github_put_file(cfg: GitHubBackupConfig, path: str, content: str, message: 
     _github_request("PUT", url, cfg.token, data=data)
 
 
+def _github_get_file_text(cfg: GitHubBackupConfig, path: str) -> str | None:
+    url = f"https://api.github.com/repos/{cfg.repo}/contents/{path}?ref={cfg.branch}"
+    try:
+        data = _github_request("GET", url, cfg.token)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    encoded = str(data.get("content") or "")
+    if not encoded:
+        return ""
+    try:
+        raw = base64.b64decode(encoded.encode("ascii"), validate=False)
+    except Exception:
+        return None
+    return raw.decode("utf-8", errors="replace")
+
+
+def fetch_backup_texts_from_github(base_dir: Path, logger=None) -> tuple[str | None, str | None]:
+    cfg = _get_backup_config(base_dir)
+    if not cfg:
+        return None, None
+    prefix = cfg.prefix
+    try:
+        chat_text = _github_get_file_text(cfg, f"{prefix}.txt")
+        diary_text = _github_get_file_text(cfg, f"{prefix}_diary.txt")
+        return chat_text, diary_text
+    except Exception as exc:
+        if logger:
+            try:
+                logger.exception("GitHub backup download failed: %s", exc)
+            except Exception:
+                pass
+        return None, None
+
+
+def _compute_backup_signature(
+    cfg: GitHubBackupConfig,
+    chat_plain: str,
+    diary_plain: str,
+) -> str:
+    hasher = hashlib.sha256()
+    hasher.update(cfg.repo.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(cfg.branch.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(cfg.prefix.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(chat_plain.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(diary_plain.encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def _get_periodic_backup_interval_seconds() -> float:
+    raw = os.getenv("CHAT_APP_GITHUB_BACKUP_INTERVAL_MINUTES", "").strip()
+    if not raw:
+        return 600.0
+    try:
+        minutes = float(raw)
+    except ValueError:
+        return 0.0
+    if minutes <= 0:
+        return 0.0
+    return max(60.0, minutes * 60.0)
+
+
 def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
+    global _LAST_BACKUP_SIGNATURE
     cfg = _get_backup_config(base_dir)
     if not cfg:
         return False
@@ -186,33 +261,19 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
         comments_by_entry = fetch_diary_comments(db_path, [entry["id"] for entry in diary_entries])
         for entry in diary_entries:
             entry["comments"] = comments_by_entry.get(entry["id"], [])
-        exported = {
-            "plain": _export_plain(messages),
-            "kakao": _export_kakao(messages),
-            "csv": _export_csv(messages),
-        }
-        diary_exported = {
-            "plain": serialize_diary_plain(diary_entries),
-            "csv": serialize_diary_csv(diary_entries),
-            "md": serialize_diary_markdown(diary_entries),
-        }
+        chat_plain = _export_plain(messages)
+        diary_plain = serialize_diary_plain(diary_entries)
+        signature = _compute_backup_signature(cfg, chat_plain, diary_plain)
+        with _LAST_BACKUP_SIGNATURE_LOCK:
+            if _LAST_BACKUP_SIGNATURE == signature:
+                return False
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
         message = f"backup {ts} (chat {len(messages)}, diary {len(diary_entries)})"
         prefix = cfg.prefix
-        paths = {
-            "plain": f"{prefix}.txt",
-            "kakao": f"{prefix}_kakao.txt",
-            "csv": f"{prefix}.csv",
-            "diary_plain": f"{prefix}_diary.txt",
-            "diary_csv": f"{prefix}_diary.csv",
-            "diary_md": f"{prefix}_diary.md",
-        }
-        for key, path in paths.items():
-            if key.startswith("diary_"):
-                diary_key = key.replace("diary_", "", 1)
-                _github_put_file(cfg, path, diary_exported[diary_key], message)
-            else:
-                _github_put_file(cfg, path, exported[key], message)
+        _github_put_file(cfg, f"{prefix}.txt", chat_plain, message)
+        _github_put_file(cfg, f"{prefix}_diary.txt", diary_plain, message)
+        with _LAST_BACKUP_SIGNATURE_LOCK:
+            _LAST_BACKUP_SIGNATURE = signature
         return True
     except Exception as exc:
         if logger:
@@ -221,3 +282,50 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
             except Exception:
                 pass
         return False
+
+
+def start_periodic_github_backup(db_path: Path, base_dir: Path, logger=None) -> bool:
+    global _PERIODIC_BACKUP_STARTED
+    interval_seconds = _get_periodic_backup_interval_seconds()
+    if interval_seconds <= 0:
+        return False
+
+    cfg = _get_backup_config(base_dir)
+    if not cfg:
+        if logger:
+            try:
+                logger.warning(
+                    "Periodic GitHub backup disabled: set CHAT_APP_GITHUB_TOKEN and CHAT_APP_GITHUB_REPO."
+                )
+            except Exception:
+                pass
+        return False
+
+    with _PERIODIC_BACKUP_LOCK:
+        if _PERIODIC_BACKUP_STARTED:
+            return True
+        _PERIODIC_BACKUP_STARTED = True
+
+    interval_minutes = interval_seconds / 60.0
+
+    def _loop() -> None:
+        if logger:
+            try:
+                logger.info(
+                    "Periodic GitHub backup started: every %.2f minutes (%s/%s).",
+                    interval_minutes,
+                    cfg.repo,
+                    cfg.branch,
+                )
+            except Exception:
+                pass
+        while True:
+            started = time.monotonic()
+            maybe_backup_to_github(db_path, base_dir, logger=logger)
+            elapsed = time.monotonic() - started
+            wait_seconds = max(5.0, interval_seconds - elapsed)
+            time.sleep(wait_seconds)
+
+    thread = threading.Thread(target=_loop, name="github-backup-loop", daemon=True)
+    thread.start()
+    return True

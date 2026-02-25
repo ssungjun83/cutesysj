@@ -27,7 +27,11 @@ from flask import (
 )
 from werkzeug.security import check_password_hash
 
-from backup import maybe_backup_to_github
+from backup import (
+    fetch_backup_texts_from_github,
+    maybe_backup_to_github,
+    start_periodic_github_backup,
+)
 from drive_client import (
     DriveConfigError,
     delete_drive_file,
@@ -1422,6 +1426,83 @@ def create_app() -> Flask:
         _require_login()
         return render_template("export.html")
 
+    @app.post("/admin/backup/run")
+    def admin_backup_run():
+        _require_login()
+        backed_up = maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        if backed_up:
+            flash("GitHub TXT 백업을 업로드했습니다.", "ok")
+        else:
+            flash("GitHub 백업 업로드가 되지 않았습니다. 토큰/저장소/권한 또는 변경 여부를 확인하세요.", "error")
+        return redirect(url_for("admin_export"))
+
+    @app.post("/admin/backup/restore")
+    def admin_backup_restore():
+        _require_login()
+        chat_text, diary_text = fetch_backup_texts_from_github(BASE_DIR, logger=app.logger)
+        if chat_text is None and diary_text is None:
+            flash("GitHub 백업 파일을 찾지 못했습니다. 백업 경로(prefix)와 토큰 권한을 확인하세요.", "error")
+            return redirect(url_for("admin_export"))
+
+        inserted_chat = 0
+        skipped_chat = 0
+        total_chat = 0
+        inserted_entries = 0
+        skipped_entries = 0
+        inserted_comments = 0
+        skipped_comments = 0
+
+        if chat_text:
+            messages = parse_chat_plain(chat_text)
+            if messages:
+                chat_result = import_messages(DB_PATH, messages, source="github-backup-restore")
+                inserted_chat = int(chat_result.get("inserted") or 0)
+                skipped_chat = int(chat_result.get("skipped") or 0)
+                total_chat = int(chat_result.get("total") or 0)
+
+        if diary_text:
+            entries = parse_diary_plain(diary_text)
+            for entry in entries:
+                upserted = upsert_diary_entry(
+                    DB_PATH,
+                    entry.entry_date,
+                    entry.title,
+                    entry.body,
+                    created_at=entry.created_at,
+                )
+                if not upserted:
+                    skipped_entries += 1
+                    continue
+                entry_id, was_inserted = upserted
+                if was_inserted:
+                    inserted_entries += 1
+                else:
+                    skipped_entries += 1
+
+                for comment in entry.comments:
+                    if not comment.body:
+                        continue
+                    added = upsert_diary_comment(
+                        DB_PATH,
+                        entry_id,
+                        comment.body,
+                        created_at=comment.created_at,
+                    )
+                    if added:
+                        inserted_comments += 1
+                    else:
+                        skipped_comments += 1
+
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        flash(
+            "GitHub 백업 복원 완료: "
+            f"대화 {inserted_chat}개 추가/{skipped_chat}개 중복(총 {total_chat}), "
+            f"일기 {inserted_entries}개 추가/{skipped_entries}개 중복, "
+            f"댓글 {inserted_comments}개 추가/{skipped_comments}개 중복",
+            "ok",
+        )
+        return redirect(url_for("admin_export"))
+
     @app.get("/admin/export/chat")
     def admin_export_chat():
         _require_login()
@@ -1659,6 +1740,8 @@ def create_app() -> Flask:
             "ok",
         )
         return redirect(url_for("index"))
+
+    start_periodic_github_backup(DB_PATH, BASE_DIR, logger=app.logger)
 
     return app
 
