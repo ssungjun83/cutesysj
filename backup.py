@@ -239,7 +239,7 @@ def _compute_backup_signature(
 def _get_periodic_backup_interval_seconds() -> float:
     raw = os.getenv("CHAT_APP_GITHUB_BACKUP_INTERVAL_MINUTES", "").strip()
     if not raw:
-        return 600.0
+        return 43200.0
     try:
         minutes = float(raw)
     except ValueError:
