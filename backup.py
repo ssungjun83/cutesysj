@@ -588,6 +588,11 @@ def _as_int(value: object) -> int | None:
         return None
 
 
+def _get_auto_skip_decrease_threshold() -> int:
+    # Allow small count changes, and only block auto-backup on a clear drop.
+    return 3
+
+
 def _should_skip_backup_on_decrease(
     state: dict[str, object],
     *,
@@ -598,7 +603,10 @@ def _should_skip_backup_on_decrease(
     prev_diary = _as_int(state.get("diary_count"))
     if prev_chat is None or prev_diary is None:
         return False
-    return chat_count < prev_chat or diary_count < prev_diary
+    threshold = _get_auto_skip_decrease_threshold()
+    chat_drop = max(0, prev_chat - chat_count)
+    diary_drop = max(0, prev_diary - diary_count)
+    return chat_drop >= threshold or diary_drop >= threshold
 
 
 def _compute_backup_signature(
@@ -673,11 +681,15 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None, *, force:
                 ):
                     if logger:
                         try:
+                            prev_chat = _as_int(state.get("chat_count")) or chat_count
+                            prev_diary = _as_int(state.get("diary_count")) or diary_count
+                            threshold = _get_auto_skip_decrease_threshold()
                             logger.warning(
-                                "Auto backup skipped due to count decrease (chat %s->%s, diary %s->%s).",
-                                state.get("chat_count"),
+                                "Auto backup skipped due to decrease threshold %s (chat %s->%s, diary %s->%s).",
+                                threshold,
+                                prev_chat,
                                 chat_count,
-                                state.get("diary_count"),
+                                prev_diary,
                                 diary_count,
                             )
                         except Exception:
