@@ -887,7 +887,6 @@ def create_app() -> Flask:
             title = "무제"
 
         add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 저장했습니다.", "ok")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
@@ -902,7 +901,6 @@ def create_app() -> Flask:
             flash("일기를 찾지 못했습니다.", "error")
             return redirect(url_for("diary", **_diary_redirect_args(request.form)))
         add_diary_comment(DB_PATH, entry_id, body)
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("댓글을 추가했습니다.", "ok")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
@@ -911,7 +909,6 @@ def create_app() -> Flask:
         _require_login()
         deleted = delete_diary_comment(DB_PATH, comment_id)
         if deleted:
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("댓글을 삭제했습니다.", "ok")
         else:
             flash("댓글을 찾지 못했습니다.", "error")
@@ -943,7 +940,6 @@ def create_app() -> Flask:
             flash("수정할 일기를 찾지 못했습니다.", "error")
             return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 수정했습니다.", "ok")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
@@ -961,7 +957,6 @@ def create_app() -> Flask:
                     delete_drive_file(drive_file_id)
                 except Exception:
                     flash(f"사진 삭제 실패: {photo.get('file_name') or drive_file_id}", "error")
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("일기를 삭제했습니다.", "ok")
         else:
             flash("삭제할 일기를 찾지 못했습니다.", "error")
@@ -982,7 +977,6 @@ def create_app() -> Flask:
                     delete_drive_file(drive_file_id)
                 except Exception:
                     flash("Drive에서 사진 삭제에 실패했습니다.", "error")
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("사진을 삭제했습니다.", "ok")
         else:
             flash("삭제할 사진을 찾지 못했습니다.", "error")
@@ -1147,7 +1141,6 @@ def create_app() -> Flask:
             flash("내용이 비어있습니다.", "error")
             return redirect(url_for("todo"))
         add_todo_item(DB_PATH, body, kind="daily")
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
     @app.post("/todo/active")
@@ -1160,21 +1153,18 @@ def create_app() -> Flask:
             return redirect(url_for("todo"))
         tags_clean, _tags_list = _todo_tags_from_input(tags_raw)
         add_todo_item(DB_PATH, body, kind="active", tags=tags_clean)
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
     @app.post("/todo/<int:item_id>/complete")
     def todo_complete(item_id: int):
         _require_login()
         complete_todo_item(DB_PATH, item_id)
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
     @app.post("/todo/daily/<int:item_id>/check")
     def todo_daily_check(item_id: int):
         _require_login()
         check_todo_daily_item(DB_PATH, item_id)
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         return redirect(url_for("todo"))
 
     @app.post("/todo/<int:item_id>/edit")
@@ -1190,7 +1180,6 @@ def create_app() -> Flask:
         if not updated:
             flash("수정할 항목을 찾지 못했습니다.", "error")
         else:
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("항목을 수정했습니다.", "ok")
         return redirect(url_for("todo"))
 
@@ -1201,7 +1190,6 @@ def create_app() -> Flask:
         if not deleted:
             flash("삭제할 항목을 찾지 못했습니다.", "error")
         else:
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("항목을 삭제했습니다.", "ok")
         return redirect(url_for("todo"))
 
@@ -1504,7 +1492,6 @@ def create_app() -> Flask:
                     else:
                         skipped_comments += 1
 
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger, force=True)
         flash(
             "GitHub 백업 복원 완료: "
             f"대화 {inserted_chat}개 추가/{skipped_chat}개 중복(총 {total_chat}), "
@@ -1624,7 +1611,6 @@ def create_app() -> Flask:
                     me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
                     other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
                 )
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash(
                 f"가져오기 완료: {result['inserted']}개 추가, {result['skipped']}개 중복 제외 (총 {result['total']}개 파싱)",
                 "ok",
@@ -1685,7 +1671,6 @@ def create_app() -> Flask:
                     else:
                         skipped_comments += 1
 
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash(
                 "일기 가져오기 완료: "
                 f"{inserted_entries}개 추가, {skipped_entries}개 중복 제외, "
@@ -1730,7 +1715,6 @@ def create_app() -> Flask:
                 if added:
                     inserted += 1
 
-            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash(f"사진 가져오기 완료: {inserted}개 추가", "ok")
             return redirect(url_for("memories"))
 
@@ -1745,7 +1729,6 @@ def create_app() -> Flask:
             me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
             other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
         )
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash(
             f"정리 완료: {result['kept']}개 유지, {result['dropped']}개 중복 제거 (총 {result['total']}개 처리)",
             "ok",
