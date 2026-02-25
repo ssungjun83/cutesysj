@@ -627,6 +627,16 @@ def _compute_backup_signature(
     return hasher.hexdigest()
 
 
+def _count_diary_units(entries: list[dict]) -> int:
+    # Diary unit count rule: entry 1 + each comment 1
+    total = 0
+    for entry in entries:
+        total += 1
+        comments = entry.get("comments") or []
+        total += len(comments)
+    return total
+
+
 def _get_periodic_backup_interval_seconds() -> float:
     raw = os.getenv("CHAT_APP_GITHUB_BACKUP_INTERVAL_MINUTES", "").strip()
     if not raw:
@@ -664,7 +674,7 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None, *, force:
             chat_plain = _export_plain(messages)
             diary_plain = serialize_diary_plain(diary_entries)
             chat_count = len(messages)
-            diary_count = len(diary_entries)
+            diary_count = _count_diary_units(diary_entries)
             signature = _compute_backup_signature(cfg, chat_plain, diary_plain)
 
             with _BACKUP_STATE_LOCK:
