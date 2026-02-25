@@ -117,6 +117,7 @@ _PERIODIC_BACKUP_LOCK = threading.Lock()
 _PERIODIC_BACKUP_STARTED = False
 _LAST_BACKUP_SIGNATURE_LOCK = threading.Lock()
 _LAST_BACKUP_SIGNATURE: str | None = None
+_CHAT_PARTS_HEADER = "# CHAT_BACKUP_PARTS v1"
 
 
 def _get_backup_config(base_dir: Path) -> GitHubBackupConfig | None:
@@ -200,13 +201,147 @@ def _github_get_file_text(cfg: GitHubBackupConfig, path: str) -> str | None:
     return raw.decode("utf-8", errors="replace")
 
 
+def _get_chat_chunk_bytes() -> int:
+    raw = os.getenv("CHAT_APP_GITHUB_CHAT_CHUNK_BYTES", "").strip()
+    if not raw:
+        return 700_000
+    try:
+        value = int(raw)
+    except ValueError:
+        return 700_000
+    if value <= 0:
+        return 700_000
+    return max(20_000, value)
+
+
+def _split_text_chunks_by_bytes(text: str, max_bytes: int) -> list[str]:
+    if max_bytes <= 0:
+        return [text]
+    if not text:
+        return [""]
+
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_size = 0
+
+    def flush_current() -> None:
+        nonlocal current_lines, current_size
+        if current_lines:
+            chunks.append("".join(current_lines))
+            current_lines = []
+            current_size = 0
+
+    def append_long_line_segments(line: str) -> None:
+        segment_chars: list[str] = []
+        segment_size = 0
+        for ch in line:
+            ch_size = len(ch.encode("utf-8"))
+            if segment_chars and segment_size + ch_size > max_bytes:
+                chunks.append("".join(segment_chars))
+                segment_chars = [ch]
+                segment_size = ch_size
+            else:
+                segment_chars.append(ch)
+                segment_size += ch_size
+        if segment_chars:
+            chunks.append("".join(segment_chars))
+
+    for line in text.splitlines(keepends=True):
+        line_size = len(line.encode("utf-8"))
+        if line_size > max_bytes:
+            flush_current()
+            append_long_line_segments(line)
+            continue
+
+        if current_lines and current_size + line_size > max_bytes:
+            flush_current()
+        current_lines.append(line)
+        current_size += line_size
+
+    flush_current()
+    return chunks or [""]
+
+
+def _build_chat_parts_manifest(part_paths: list[str]) -> str:
+    payload = {"parts": part_paths}
+    return f"{_CHAT_PARTS_HEADER}\n{json.dumps(payload, ensure_ascii=False)}\n"
+
+
+def _parse_chat_parts_manifest(text: str) -> list[str] | None:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != _CHAT_PARTS_HEADER:
+        return None
+    body = "\n".join(lines[1:]).strip()
+    if not body:
+        return None
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    raw_parts = payload.get("parts")
+    if not isinstance(raw_parts, list) or not raw_parts:
+        return None
+    parts: list[str] = []
+    for item in raw_parts:
+        path = str(item or "").strip().lstrip("/")
+        if path:
+            parts.append(path)
+    return parts or None
+
+
+def _upload_chat_backup(cfg: GitHubBackupConfig, prefix: str, chat_plain: str, message: str, logger=None) -> None:
+    chunk_bytes = _get_chat_chunk_bytes()
+    total_size = len(chat_plain.encode("utf-8"))
+
+    if total_size <= chunk_bytes:
+        _github_put_file(cfg, f"{prefix}.txt", chat_plain, message)
+        return
+
+    chunks = _split_text_chunks_by_bytes(chat_plain, chunk_bytes)
+    part_paths: list[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        part_path = f"{prefix}.part{idx:03d}.txt"
+        _github_put_file(cfg, part_path, chunk, message)
+        part_paths.append(part_path)
+
+    manifest = _build_chat_parts_manifest(part_paths)
+    _github_put_file(cfg, f"{prefix}.txt", manifest, message)
+    if logger:
+        try:
+            logger.info(
+                "Uploaded chunked chat backup: %d parts (size=%d bytes, chunk=%d bytes).",
+                len(part_paths),
+                total_size,
+                chunk_bytes,
+            )
+        except Exception:
+            pass
+
+
+def _download_chat_backup(cfg: GitHubBackupConfig, prefix: str) -> str | None:
+    raw = _github_get_file_text(cfg, f"{prefix}.txt")
+    if raw is None:
+        return None
+    part_paths = _parse_chat_parts_manifest(raw)
+    if not part_paths:
+        return raw
+
+    parts: list[str] = []
+    for part_path in part_paths:
+        part_text = _github_get_file_text(cfg, part_path)
+        if part_text is None:
+            return None
+        parts.append(part_text)
+    return "".join(parts)
+
+
 def fetch_backup_texts_from_github(base_dir: Path, logger=None) -> tuple[str | None, str | None]:
     cfg = _get_backup_config(base_dir)
     if not cfg:
         return None, None
     prefix = cfg.prefix
     try:
-        chat_text = _github_get_file_text(cfg, f"{prefix}.txt")
+        chat_text = _download_chat_backup(cfg, prefix)
         diary_text = _github_get_file_text(cfg, f"{prefix}_diary.txt")
         return chat_text, diary_text
     except Exception as exc:
@@ -270,7 +405,7 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None) -> bool:
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
         message = f"backup {ts} (chat {len(messages)}, diary {len(diary_entries)})"
         prefix = cfg.prefix
-        _github_put_file(cfg, f"{prefix}.txt", chat_plain, message)
+        _upload_chat_backup(cfg, prefix, chat_plain, message, logger=logger)
         _github_put_file(cfg, f"{prefix}_diary.txt", diary_plain, message)
         with _LAST_BACKUP_SIGNATURE_LOCK:
             _LAST_BACKUP_SIGNATURE = signature
