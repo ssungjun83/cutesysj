@@ -12,7 +12,7 @@
         <h1 class="title">내보내기 / 백업</h1>
         <a class="link" href="{{ url_for('index') }}">메인으로</a>
       </div>
-      <p class="sub">내보내기 파일 다운로드와 GitHub 자동 백업/복원을 한 곳에서 관리합니다.</p>
+      <p class="sub">내보내기 다운로드와 GitHub 자동 백업/복원을 관리합니다.</p>
 
       <section class="export-section">
         <h2 class="section-title">대화 내보내기</h2>
@@ -47,10 +47,17 @@
           <form method="post" action="{{ url_for('admin_backup_run') }}">
             <button type="submit" class="btn-link">지금 백업 실행</button>
           </form>
-          <form method="post" action="{{ url_for('admin_backup_restore') }}" onsubmit="return confirm('GitHub 백업 파일로 현재 DB를 복원합니다. 계속할까요?');">
-            <button type="submit" class="btn-link">GitHub 백업 복원</button>
-          </form>
         </div>
+        <form class="export-restore-form" method="post" action="{{ url_for('admin_backup_restore') }}" onsubmit="return confirm('선택한 GitHub 백업 버전으로 DB를 복원합니다. 계속할까요?');">
+          <label class="label" for="restore_ref">복원 버전</label>
+          <select id="restore_ref" name="restore_ref" class="input">
+            <option value="">최신 백업 사용</option>
+            {% for version in backup_versions %}
+              <option value="{{ version.sha }}">{{ version.created_at }} | {{ version.short_sha }} | {{ version.message }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn-link">GitHub 백업 복원</button>
+        </form>
       </section>
     </div>
     {% include "_auth_guard.html" %}

@@ -656,6 +656,13 @@ body {
 .export-section { margin-top: 14px; }
 .export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .export-actions form { margin: 0; }
+.export-restore-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.export-restore-form .btn-link { align-self: flex-start; }
 .diary-list { display: flex; flex-direction: column; gap: 12px; }
 .diary-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .diary-count { font-size: 12px; color: var(--muted); }

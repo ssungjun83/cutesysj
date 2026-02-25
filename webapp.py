@@ -29,6 +29,7 @@ from werkzeug.security import check_password_hash
 
 from backup import (
     fetch_backup_texts_from_github,
+    list_backup_versions,
     maybe_backup_to_github,
     start_periodic_github_backup,
 )
@@ -1424,12 +1425,13 @@ def create_app() -> Flask:
     @app.get("/admin/export")
     def admin_export():
         _require_login()
-        return render_template("export.html")
+        versions = list_backup_versions(BASE_DIR, limit=30, logger=app.logger)
+        return render_template("export.html", backup_versions=versions)
 
     @app.post("/admin/backup/run")
     def admin_backup_run():
         _require_login()
-        backed_up = maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        backed_up = maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger, force=True)
         if backed_up:
             flash("GitHub TXT 백업을 업로드했습니다.", "ok")
         else:
@@ -1439,7 +1441,16 @@ def create_app() -> Flask:
     @app.post("/admin/backup/restore")
     def admin_backup_restore():
         _require_login()
-        chat_text, diary_text = fetch_backup_texts_from_github(BASE_DIR, logger=app.logger)
+        restore_ref = (request.form.get("restore_ref") or "").strip()
+        if restore_ref and not re.fullmatch(r"[0-9a-fA-F]{7,40}", restore_ref):
+            flash("蹂듭썝 踰꾩쟾(而ㅻ컠 SHA) ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.", "error")
+            return redirect(url_for("admin_export"))
+
+        chat_text, diary_text = fetch_backup_texts_from_github(
+            BASE_DIR,
+            logger=app.logger,
+            ref=restore_ref or None,
+        )
         if chat_text is None and diary_text is None:
             flash("GitHub 백업 파일을 찾지 못했습니다. 백업 경로(prefix)와 토큰 권한을 확인하세요.", "error")
             return redirect(url_for("admin_export"))
@@ -1493,7 +1504,7 @@ def create_app() -> Flask:
                     else:
                         skipped_comments += 1
 
-        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger, force=True)
         flash(
             "GitHub 백업 복원 완료: "
             f"대화 {inserted_chat}개 추가/{skipped_chat}개 중복(총 {total_chat}), "
