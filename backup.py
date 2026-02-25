@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import csv
 from dataclasses import dataclass
 from datetime import datetime
@@ -173,18 +174,38 @@ def _github_get_file_sha(cfg: GitHubBackupConfig, path: str) -> str | None:
     return str(data.get("sha") or "") or None
 
 
+def _get_conflict_retry_attempts() -> int:
+    raw = os.getenv("CHAT_APP_GITHUB_CONFLICT_RETRY_ATTEMPTS", "").strip()
+    if not raw:
+        return 8
+    try:
+        value = int(raw)
+    except ValueError:
+        return 8
+    return max(1, min(value, 30))
+
+
 def _github_put_file(cfg: GitHubBackupConfig, path: str, content: str, message: str) -> None:
     url = f"https://api.github.com/repos/{cfg.repo}/contents/{path}"
-    sha = _github_get_file_sha(cfg, path)
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": cfg.branch,
-    }
-    if sha:
-        payload["sha"] = sha
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    _github_request("PUT", url, cfg.token, data=data)
+    attempts = _get_conflict_retry_attempts()
+    for attempt in range(1, attempts + 1):
+        sha = _github_get_file_sha(cfg, path)
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": cfg.branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        try:
+            _github_request("PUT", url, cfg.token, data=data)
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code in (409, 422) and attempt < attempts:
+                time.sleep(min(2.5, 0.2 * attempt))
+                continue
+            raise
 
 
 def _github_get_file_text(cfg: GitHubBackupConfig, path: str, ref: str | None = None) -> str | None:
@@ -451,6 +472,81 @@ def _backup_state_path(db_path: Path, cfg: GitHubBackupConfig) -> Path:
     return db_path.parent / f"github_backup_state_{state_key}.json"
 
 
+def _backup_lock_path(db_path: Path, cfg: GitHubBackupConfig) -> Path:
+    lock_key = hashlib.sha256(f"{cfg.repo}:{cfg.branch}:{cfg.prefix}".encode("utf-8")).hexdigest()[:10]
+    return db_path.parent / f"github_backup_lock_{lock_key}.lock"
+
+
+def _get_backup_lock_wait_seconds() -> float:
+    raw = os.getenv("CHAT_APP_GITHUB_BACKUP_LOCK_WAIT_SECONDS", "").strip()
+    if not raw:
+        return 45.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 45.0
+    return max(1.0, min(value, 300.0))
+
+
+def _get_backup_lock_stale_seconds() -> float:
+    raw = os.getenv("CHAT_APP_GITHUB_BACKUP_LOCK_STALE_SECONDS", "").strip()
+    if not raw:
+        return 180.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 180.0
+    return max(10.0, min(value, 3600.0))
+
+
+@contextmanager
+def _acquire_backup_run_lock(db_path: Path, cfg: GitHubBackupConfig, logger=None):
+    lock_path = _backup_lock_path(db_path, cfg)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    wait_seconds = _get_backup_lock_wait_seconds()
+    stale_seconds = _get_backup_lock_stale_seconds()
+    deadline = time.monotonic() + wait_seconds
+    acquired = False
+
+    while time.monotonic() <= deadline:
+        now = time.time()
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                stat = lock_path.stat()
+                if now - stat.st_mtime > stale_seconds:
+                    lock_path.unlink(missing_ok=True)
+                    continue
+            except Exception:
+                pass
+            time.sleep(0.2)
+            continue
+        except Exception:
+            break
+
+        try:
+            os.write(fd, f"{os.getpid()} {int(now)}\n".encode("utf-8"))
+        finally:
+            os.close(fd)
+        acquired = True
+        break
+
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                lock_path.unlink(missing_ok=True)
+            except Exception:
+                if logger:
+                    try:
+                        logger.warning("Could not remove backup lock file: %s", lock_path)
+                    except Exception:
+                        pass
+
+
 def _load_backup_state(db_path: Path, cfg: GitHubBackupConfig) -> dict[str, object]:
     path = _backup_state_path(db_path, cfg)
     if not path.exists():
@@ -542,71 +638,80 @@ def maybe_backup_to_github(db_path: Path, base_dir: Path, logger=None, *, force:
     if not cfg:
         return False
 
-    try:
-        messages = fetch_messages(db_path, limit=None, before_dt=None, order="asc")
-        diary_entries = fetch_diary_entries(db_path, limit=None, order="asc")
-        comments_by_entry = fetch_diary_comments(db_path, [entry["id"] for entry in diary_entries])
-        for entry in diary_entries:
-            entry["comments"] = comments_by_entry.get(entry["id"], [])
-        chat_plain = _export_plain(messages)
-        diary_plain = serialize_diary_plain(diary_entries)
-        chat_count = len(messages)
-        diary_count = len(diary_entries)
-        signature = _compute_backup_signature(cfg, chat_plain, diary_plain)
+    with _acquire_backup_run_lock(db_path, cfg, logger=logger) as acquired:
+        if not acquired:
+            if logger:
+                try:
+                    logger.warning("GitHub backup skipped: another backup is already running.")
+                except Exception:
+                    pass
+            return False
 
-        with _BACKUP_STATE_LOCK:
-            state = _load_backup_state(db_path, cfg)
-            if _as_int(state.get("chat_count")) is None or _as_int(state.get("diary_count")) is None:
-                remote_chat, remote_diary = _read_latest_remote_counts(cfg)
-                if remote_chat is not None and remote_diary is not None:
-                    state["chat_count"] = remote_chat
-                    state["diary_count"] = remote_diary
-            if not force and _should_skip_backup_on_decrease(
-                state,
-                chat_count=chat_count,
-                diary_count=diary_count,
-            ):
-                if logger:
-                    try:
-                        logger.warning(
-                            "Auto backup skipped due to count decrease (chat %s->%s, diary %s->%s).",
-                            state.get("chat_count"),
-                            chat_count,
-                            state.get("diary_count"),
-                            diary_count,
-                        )
-                    except Exception:
-                        pass
-                return False
+        try:
+            messages = fetch_messages(db_path, limit=None, before_dt=None, order="asc")
+            diary_entries = fetch_diary_entries(db_path, limit=None, order="asc")
+            comments_by_entry = fetch_diary_comments(db_path, [entry["id"] for entry in diary_entries])
+            for entry in diary_entries:
+                entry["comments"] = comments_by_entry.get(entry["id"], [])
+            chat_plain = _export_plain(messages)
+            diary_plain = serialize_diary_plain(diary_entries)
+            chat_count = len(messages)
+            diary_count = len(diary_entries)
+            signature = _compute_backup_signature(cfg, chat_plain, diary_plain)
 
-            state_signature = str(state.get("signature") or "").strip()
-            with _LAST_BACKUP_SIGNATURE_LOCK:
-                if _LAST_BACKUP_SIGNATURE == signature or state_signature == signature:
+            with _BACKUP_STATE_LOCK:
+                state = _load_backup_state(db_path, cfg)
+                if _as_int(state.get("chat_count")) is None or _as_int(state.get("diary_count")) is None:
+                    remote_chat, remote_diary = _read_latest_remote_counts(cfg)
+                    if remote_chat is not None and remote_diary is not None:
+                        state["chat_count"] = remote_chat
+                        state["diary_count"] = remote_diary
+                if not force and _should_skip_backup_on_decrease(
+                    state,
+                    chat_count=chat_count,
+                    diary_count=diary_count,
+                ):
+                    if logger:
+                        try:
+                            logger.warning(
+                                "Auto backup skipped due to count decrease (chat %s->%s, diary %s->%s).",
+                                state.get("chat_count"),
+                                chat_count,
+                                state.get("diary_count"),
+                                diary_count,
+                            )
+                        except Exception:
+                            pass
                     return False
 
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-        message = f"backup {ts} (chat {chat_count}, diary {diary_count})"
-        prefix = cfg.prefix
-        _upload_chat_backup(cfg, prefix, chat_plain, message, logger=logger)
-        _github_put_file(cfg, f"{prefix}_diary.txt", diary_plain, message)
-        with _BACKUP_STATE_LOCK:
-            _save_backup_state(
-                db_path,
-                cfg,
-                chat_count=chat_count,
-                diary_count=diary_count,
-                signature=signature,
-            )
-            with _LAST_BACKUP_SIGNATURE_LOCK:
-                _LAST_BACKUP_SIGNATURE = signature
-        return True
-    except Exception as exc:
-        if logger:
-            try:
-                logger.exception("GitHub backup failed: %s", exc)
-            except Exception:
-                pass
-        return False
+                state_signature = str(state.get("signature") or "").strip()
+                with _LAST_BACKUP_SIGNATURE_LOCK:
+                    if _LAST_BACKUP_SIGNATURE == signature or state_signature == signature:
+                        return False
+
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+            message = f"backup {ts} (chat {chat_count}, diary {diary_count})"
+            prefix = cfg.prefix
+            _upload_chat_backup(cfg, prefix, chat_plain, message, logger=logger)
+            _github_put_file(cfg, f"{prefix}_diary.txt", diary_plain, message)
+            with _BACKUP_STATE_LOCK:
+                _save_backup_state(
+                    db_path,
+                    cfg,
+                    chat_count=chat_count,
+                    diary_count=diary_count,
+                    signature=signature,
+                )
+                with _LAST_BACKUP_SIGNATURE_LOCK:
+                    _LAST_BACKUP_SIGNATURE = signature
+            return True
+        except Exception as exc:
+            if logger:
+                try:
+                    logger.exception("GitHub backup failed: %s", exc)
+                except Exception:
+                    pass
+            return False
 
 
 def start_periodic_github_backup(db_path: Path, base_dir: Path, logger=None) -> bool:
