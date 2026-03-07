@@ -1,2 +1,2 @@
 # CHAT_BACKUP_PARTS v1
-{"parts": ["backup/latest.part001.txt", "backup/latest.part002.txt", "backup/latest.part003.txt", "backup/latest.part004.txt", "backup/latest.part005.txt", "backup/latest.part006.txt"]}
+{"parts": ["backup/latest.part001.txt", "backup/latest.part002.txt", "backup/latest.part003.txt", "backup/latest.part004.txt", "backup/latest.part005.txt", "backup/latest.part006.txt", "backup/latest.part007.txt"]}
